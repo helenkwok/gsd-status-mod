@@ -1,0 +1,17 @@
+{
+  "name": "helenkwok-mods",
+  "owner": {
+    "name": "Helen Kwok",
+    "url": "https://github.com/helenkwok"
+  },
+  "metadata": {
+    "description": "Claude Code mods by Helen Kwok."
+  },
+  "plugins": [
+    {
+      "name": "gsd-status-mod",
+      "source": "./",
+      "description": "Resume hints for GSD projects: where work stopped, a STATE.md drift warning, the handoff's next action, and a Tab suggestion."
+    }
+  ]
+}

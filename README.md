@@ -68,7 +68,16 @@ The `AbovePrompt` band and the hint line are shared. This plugin keeps whatever 
 below it in the chain and puts its line on top, and it appends its hint tail after another mod's tail. A mod that answers without calling `next` hides every mod after it in load order; if
 such a mod loads before this one, its band is the only one shown, and that is the other mod's behaviour.
 
-## Try it
+## Install it (once)
+
+    claude plugin marketplace add helenkwok/gsd-status-mod
+    claude plugin install gsd-status-mod@helenkwok-mods
+
+After that it loads in every session, with no flag. In a project that is not a GSD project it draws nothing. Update with
+`claude plugin update gsd-status-mod@helenkwok-mods`; remove with `claude plugin uninstall gsd-status-mod@helenkwok-mods`.
+Add `--scope project` to install it for one project only.
+
+## Try it without installing
 
 Needs Claude Code 2.1.287 or later (`claude --version`) and Node 20+ only if you want to run the tests. There is nothing to
 build or install: the plugin is loaded from its folder for one session.

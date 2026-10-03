@@ -38,7 +38,15 @@ function note(kind, text, at) {
   live.log = [...live.log, { at, kind, text }].slice(-40);
 }
 
-const read = ($, path) => $.fs.read(path).catch(() => null);
+// Paths are read from the session root, not the current directory: Bash can `cd` anywhere, and a cwd-relative
+// ".planning/STATE.md" then goes missing and the pane flips to "No GSD project here".
+let root = "";
+const at = (path) => (root ? `${root}/${path}` : path);
+const read = ($, path) => $.fs.read(at(path)).catch(() => null);
+async function findRoot($) {
+  if (root) return;
+  root = String((await $.session.root().catch(() => "")) ?? "").replace(/\/+$/, "");
+}
 
 // The reflog lives in .git/logs/HEAD; in a linked worktree .git is a file pointing at the real git dir.
 async function reflog($) {
@@ -77,7 +85,7 @@ async function readAgents($, now) {
 async function readStreams($) {
   const out = [];
   for (const name of STREAMS) {
-    const info = streamInfo(await $.fs.list(`.planning/${name}`).catch(() => []));
+    const info = streamInfo(await $.fs.list(at(`.planning/${name}`)).catch(() => []));
     if (info) out.push({ name, ...info });
   }
   return out;
@@ -85,6 +93,7 @@ async function readStreams($) {
 
 // Everything the band, the hint and the pane need. The work streams are listed only when `full` (they change rarely).
 async function refresh($, full = true) {
+  await findRoot($);
   const now = await $.clock.now();
   lastRefreshAt = now;
   const state = await read($, ".planning/STATE.md");
@@ -118,6 +127,7 @@ async function refresh($, full = true) {
 
 // /gsd-status: the full report, read fresh from disk each time so it is never behind the band.
 async function report($) {
+  await findRoot($);
   const state = await read($, ".planning/STATE.md");
   const ok = state != null && isGsdState(state);
   const handoff = ok ? await read($, ".planning/HANDOFF.json") : null;

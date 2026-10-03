@@ -223,3 +223,26 @@ test("reader: pages cut at a line and not inside a fence; frontmatter hidden; br
   assert.equal(resolveLink(".planning/a.md", "/abs.md"), null);
   assert.equal(resolveLink(".planning/a.md", "img.png"), null);
 });
+
+test("pace: plan shape, agent time shares, parallelism, and a hint only on clear evidence", async () => {
+  const { planShape, agentPace, panelModel } = await import("../hooks/panel.mjs");
+  const chain = [{ id: "04-01", wave: 1, done: true }, { id: "04-02", wave: 2, done: false }, { id: "04-03", wave: 3, done: false }];
+  assert.deepEqual({ ...planShape(chain), byWave: undefined }, { total: 3, open: 2, waves: 2, widest: 1, byWave: undefined });
+  assert.equal(planShape([{ id: "a", wave: 1, done: false }, { id: "b", wave: 1, done: false }]).widest, 2);
+  assert.equal(planShape([]).widest, 0);
+  const T = 1000, B = 1e6; // B: a real start time is never 0
+  const serial = [{ type: "gsd-executor", since: B, endedAt: B + 60 * T }, { type: "gsd-executor", since: B + 60 * T, endedAt: B + 120 * T }, { type: "gsd-planner", since: B + 120 * T, endedAt: B + 150 * T }];
+  const p = agentPace(serial, B + 200 * T);
+  assert.equal(p.byType[0][0], "executor");
+  assert.equal(p.executors, 2);
+  assert.ok(Math.abs(p.executorParallel - 1) < 1e-9);
+  const para = agentPace([{ type: "gsd-executor", since: B, endedAt: B + 60 * T }, { type: "gsd-executor", since: B, endedAt: B + 60 * T }], B + 100 * T);
+  assert.ok(Math.abs(para.executorParallel - 2) < 1e-9);
+  const state = "---\ncurrent_phase: 4\n---\n";
+  const lines = (m) => m.panels.find((x) => x.id === "pace").lines.map((l) => (Array.isArray(l) ? l.map((s) => s[0]).join("") : l.button.label));
+  const a = lines(panelModel({ state, plans: chain, agents: serial, now: B + 200 * T }, 62));
+  assert.ok(a.some((l) => /serial: each plan waits/.test(l)) && a.some((l) => /serial: executors ran one at a time/.test(l)));
+  const wide = lines(panelModel({ state, plans: [{ id: "a", wave: 1, done: false }, { id: "b", wave: 1, done: false }], agents: [], now: 0 }, 62));
+  assert.ok(!wide.some((l) => /serial/.test(l)));
+  assert.equal(panelModel({ state, plans: [], agents: [], now: 0 }, 62).panels.some((x) => x.id === "pace"), false);
+});

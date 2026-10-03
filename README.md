@@ -43,6 +43,11 @@ It is a Claude Code **mod**. It adds a live pane and four smaller things, each s
   - *roadmap*: the phase checklist from `ROADMAP.md` with the current phase marked. The current phase comes from
     `STATE.md` (its `current_phase`, or the label that starts `current_phase_name`); it is never guessed, so a project
     whose state names no phase shows the list with no marker. Only `- [x] **Phase N: name**` lines are read.
+  - *pace*: how the current phase's plans are laid out to run (plans left, waves, the widest wave) and where this
+    session's agent time went (share by agent type, and how parallel the executors ran, 1.0 being one at a time). It
+    says "serial" only on clear evidence: plans left in single-plan waves, or two or more executors that ran one at a
+    time. Plans come from `wave:` in the phase's `*-PLAN.md` frontmatter; a plan with a `NN-MM-SUMMARY.md` is done.
+    `p` shows the wave-by-wave list and the time by type.
   - *agents*: a tree of running and finished agents, with forks (`⑂`) and sub-agents under their parent, and a live
     clock. Finished agents fold away while others run.
   - *markdown reader*: `o: ▸ read .planning` (or any entry under *work streams*) swaps the dashboard for a browser of
@@ -54,7 +59,7 @@ It is a Claude Code **mod**. It adds a live pane and four smaller things, each s
     *session log* of prompts, spawns, errors and new commits.
 
   Everything with a `▸` is clickable. With the pane focused (`ctrl+x`, then `Tab`) hotkeys work too: `1`-`6` agent rows,
-  `b` blockers, `r` roadmap, `w` workstream, `o` read `.planning`, `f` finished agents, `l` log. The pane is read-only. The cost is whatever Claude Code
+  `b` blockers, `r` roadmap, `p` pace, `w` workstream, `o` read `.planning`, `f` finished agents, `l` log. The pane is read-only. The cost is whatever Claude Code
   reports for the session, shown as is; it is an estimate, not a bill. The band above the prompt is hidden while the
   pane is open, so the same line is not drawn twice.
 

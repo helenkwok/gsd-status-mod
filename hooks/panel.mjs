@@ -130,6 +130,45 @@ function currentIndex(phases, fm) {
   return -1;
 }
 
+// --- pace: where a GSD run's time goes
+
+// Plans of the current phase -> how they are laid out to run. A wave is a set of plans that may run together, so plans
+// left to run in single-plan waves go one after another. plans: [{ id, wave, done }]
+export function planShape(plans) {
+  const byWave = new Map();
+  for (const p of plans ?? []) (byWave.get(p.wave) ?? byWave.set(p.wave, []).get(p.wave)).push(p);
+  const open = (plans ?? []).filter((p) => !p.done);
+  const openWaves = new Map();
+  for (const p of open) openWaves.set(p.wave, (openWaves.get(p.wave) ?? 0) + 1);
+  return {
+    total: (plans ?? []).length, open: open.length, waves: openWaves.size, widest: Math.max(0, ...openWaves.values()),
+    byWave: [...byWave].sort((a, b) => a[0] - b[0]),
+  };
+}
+
+// This session's agents -> share of agent time by type, and how parallel they ran (agent time / wall time, 1.0 = one
+// at a time). agents: [{ type, since, endedAt }]; a running agent counts up to `now`.
+export function agentPace(agents, now) {
+  const iv = (agents ?? []).filter((a) => a.since).map((a) => ({ type: shortType(a.type), a: a.since, b: Math.max(a.since, a.endedAt ?? now) }));
+  const spanOf = (list) => { // wall time covered by the intervals, overlaps counted once
+    let wall = 0, cur = null;
+    for (const x of [...list].sort((p, q) => p.a - q.a)) {
+      if (!cur || x.a > cur.b) { if (cur) wall += cur.b - cur.a; cur = { a: x.a, b: x.b }; } else cur.b = Math.max(cur.b, x.b);
+    }
+    return wall + (cur ? cur.b - cur.a : 0);
+  };
+  const sums = new Map();
+  for (const x of iv) sums.set(x.type, (sums.get(x.type) ?? 0) + (x.b - x.a));
+  const total = [...sums.values()].reduce((m, v) => m + v, 0);
+  const ex = iv.filter((x) => x.type === "executor");
+  const exSum = ex.reduce((m, x) => m + x.b - x.a, 0);
+  const exWall = ex.length ? spanOf(ex) : 0;
+  return {
+    total, byType: [...sums].sort((a, b) => b[1] - a[1]), count: iv.length,
+    executors: ex.length, executorParallel: exWall > 0 ? exSum / exWall : null,
+  };
+}
+
 // --- the markdown reader's pure parts
 
 // The YAML block at the top of a GSD file: the dashboard already shows STATE's fields, so the reader hides it.
@@ -182,6 +221,7 @@ function readerModel(rd, header, inner) {
 }
 
 // in: {
+//   plans: [{ id, wave, done }],   // the current phase's plans
 //   reader: { path, isFile, entries, text } | null,   // the markdown reader, when open
 //   roadmap: ROADMAP.md text | null,
 //   state: STATE.md text | null,
@@ -196,7 +236,7 @@ function readerModel(rd, header, inner) {
 //   now: ms }
 // -> { header: segments, panels: [{ id, color, title: segments, right: segments|null, lines: [segments] }] }
 export function panelModel(inp, width = 62) {
-  const ex = { agents: new Set(), finished: false, blockers: false, log: false, roadmap: false, ...(inp.expand ?? {}) };
+  const ex = { agents: new Set(), finished: false, blockers: false, log: false, roadmap: false, pace: false, ...(inp.expand ?? {}) };
   const w = Math.max(36, width);
   const inner = w - 4; // the border and one column of padding on each side
   const fm = frontmatter(inp.state ?? "") ?? {};
@@ -270,6 +310,30 @@ export function panelModel(inp, width = 62) {
     const pn = Number(/^\s*completed_plans:\s*(\d+)/m.exec(sm)?.[1]), pt = Number(/^\s*total_plans:\s*(\d+)/m.exec(sm)?.[1]);
     panels.push({ id: "roadmap", color: C.ok, title: [["roadmap", C.ok, "b"]],
       right: [[`${doneN}/${road.length} phases${pt ? ` · ${pn}/${pt} plans` : ""}`, C.dim]], lines });
+  }
+
+  // pace: how the plans are laid out, and where this session's agent time went. The hint shows only on clear evidence.
+  const shape = planShape(inp.plans);
+  const pace = agentPace(inp.agents, now);
+  const showTime = pace.total >= 60000;
+  if (shape.total || showTime) {
+    const lines = [];
+    const serialPlans = shape.open >= 2 && shape.widest === 1;
+    const serialRun = pace.executors >= 2 && pace.executorParallel != null && pace.executorParallel < 1.15 && pace.total >= 120000;
+    if (shape.total) lines.push([["plans ", C.dim], [`${shape.open} to run of ${shape.total} · ${plural(shape.waves, "wave")} · widest ${shape.widest}`, null]]);
+    if (serialPlans) lines.push([["serial: each plan waits for the one before it", C.amber]]);
+    if (showTime) {
+      lines.push([["time  ", C.dim], [pace.byType.slice(0, 3).map(([t, ms]) => `${t} ${Math.round((100 * ms) / pace.total)}%`).join(" · "), null]]);
+      if (serialRun) lines.push([["serial: executors ran one at a time", C.amber], [` ×${pace.executorParallel.toFixed(1)}`, C.dim]]);
+    }
+    lines.push({ button: { key: "pace", label: `${ex.pace ? "▾ hide" : "▸"} details`, color: C.dim, hotkey: "p" } });
+    if (ex.pace) {
+      for (const [wave, list] of shape.byWave) lines.push([[`  wave ${wave}  `, C.dim], [list.map((p) => `${p.id} ${p.done ? "✓" : "○"}`).join("  "), null]]);
+      const wid = Math.max(...pace.byType.map(([t]) => t.length)) + 2;
+      for (const [t, ms] of pace.byType) lines.push([[`  ${t.padEnd(wid)}`, C.dim], [clock(ms), null], [`  ${Math.round((100 * ms) / pace.total)}%`, C.dim]]);
+      if (pace.executors >= 2 && pace.executorParallel != null) lines.push([["  executors in parallel ", C.dim], [`×${pace.executorParallel.toFixed(2)}`, null]]);
+    }
+    panels.push({ id: "pace", color: C.amber, title: [["pace", C.amber, "b"]], right: shape.total && serialPlans ? [["serial", C.amber]] : null, lines });
   }
 
   // agents: a tree, so a fork or a sub-agent sits under the agent that started it

@@ -1,4 +1,4 @@
-import { isGsdState, resumeLine, handoffInfo, driftNote, statusReport, pickWorkstream } from "./state-line.mjs";
+import { frontmatter, isGsdState, resumeLine, handoffInfo, driftNote, statusReport, pickWorkstream } from "./state-line.mjs";
 import { panelModel, streamInfo, commitCount, commitFeed, shortPath } from "./panel.mjs";
 
 // The command named by the handoff's next_action (see nextCommand) is offered as a dim suggestion: Tab puts it in the
@@ -17,7 +17,7 @@ const forks = new Set(); // ids of agents started as forks of their parent (only
 const PANE = "gsd-board";
 // What the person has opened in the pane by clicking (or pressing a hotkey): agent rows, finished agents, blockers, streams, log.
 let reader = null; // the markdown reader: { path, isFile, entries | text }, or null for the dashboard
-const expand = { agents: new Set(), roadmap: false, finished: false, blockers: false, streams: new Set(), log: false };
+const expand = { agents: new Set(), roadmap: false, pace: false, finished: false, blockers: false, streams: new Set(), log: false };
 const PANE_SIZE = { columns: 64, rows: 16 };
 const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
 const STREAMS = ["phases", "spikes", "threads", "quick", "todos", "seeds", "notes"];
@@ -36,7 +36,7 @@ function flip(key) {
 }
 
 function freshLive() {
-  return { state: null, roadmap: null, workstream: null, handoff: null, usage: null, agents: [], streams: [], log: [], isRunning: false, turn: null, receipt: null,
+  return { state: null, roadmap: null, plans: [], workstream: null, handoff: null, usage: null, agents: [], streams: [], log: [], isRunning: false, turn: null, receipt: null,
     commits: 0, newest: null, startCommits: 0, startCost: null };
 }
 
@@ -116,6 +116,26 @@ async function readAgents($, now) {
   return agents;
 }
 
+// The current phase's plans and whether each is done, for the pace box. The phase folder is matched by number (04 is 4,
+// 02.1 is 2.1); a plan is done when its NN-MM-SUMMARY.md exists; a plan with no `wave:` is left out.
+async function readPlans($, state) {
+  const num = String(frontmatter(state)?.current_phase ?? "").replace(/^0+(?=\d)/, "");
+  if (!num) return [];
+  const dirs = await $.fs.list(at(plan("phases"))).catch(() => []);
+  const dir = dirs.find((e) => e.kind === "dir" && e.name.split("-")[0].replace(/^0+(?=\d)/, "") === num);
+  if (!dir) return [];
+  const base = `${plan("phases")}/${dir.name}`;
+  const files = await $.fs.list(at(base)).catch(() => []);
+  const out = [];
+  for (const f of files) {
+    const id = /^(.*)-PLAN\.md$/.exec(f.name)?.[1];
+    if (!id) continue;
+    const wave = Number(frontmatter((await read($, `${base}/${f.name}`)) ?? "")?.wave);
+    if (wave) out.push({ id, wave, done: files.some((x) => x.name === `${id}-SUMMARY.md`) });
+  }
+  return out;
+}
+
 async function readStreams($) {
   const out = [];
   for (const name of STREAMS) {
@@ -160,7 +180,7 @@ async function refresh($, full = true) {
   live.handoff = parsed;
   live.usage = await readUsage($);
   live.agents = await readAgents($, now);
-  if (full) { live.streams = await readStreams($); live.roadmap = await read($, plan("ROADMAP.md")); }
+  if (full) { live.streams = await readStreams($); live.roadmap = await read($, plan("ROADMAP.md")); live.plans = await readPlans($, state); }
   $.ui.invalidate("ui.render"); // render output is cached until invalidated
 }
 

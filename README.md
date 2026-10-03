@@ -145,5 +145,5 @@ To check the plugin itself: `cd ~/gsd-status-mod`, then `claude plugin validate 
 The band above the prompt is not drawn in a very short terminal window: it appeared at 16 rows and above and not at 13 (the
 engine drops it). The hint tail and the suggestion are unaffected.
 
-Windows (untested). A session in a worktree shows the main checkout's `.planning`, which is wrong if that worktree is on a different phase. Background:
+On Windows the pane has been used in a workstream project (it showed the roadmap and workstream); the other features have not been tried there. A session in a worktree shows the main checkout's `.planning`, which is wrong if that worktree is on a different phase. Background:
 open-gsd/gsd-core#5174 (a maintainer asked to revisit in-tree support in November 2026; this plugin is the out-of-tree route).

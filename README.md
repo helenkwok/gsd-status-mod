@@ -1,7 +1,17 @@
 # gsd-status-mod
 
-A Claude Code **mod** (needs Claude Code 2.1.287+) for a GSD project. It adds a live pane and four smaller things, each
-showing what the GSD statusline does not:
+A live dashboard for [GSD](https://github.com/open-gsd/gsd-core) projects, as a Claude Code mod: the roadmap with the current phase
+marked, an agent tree with forks and sub-agents and live clocks, context and cost, work streams, and a built-in markdown
+reader for `.planning`. Read-only, no dependencies, and it draws nothing outside a GSD project.
+
+![Demo: the pane while two agents run, the blockers opened, then the markdown reader opening a phase plan and returning to the dashboard](docs/screenshots/demo.gif)
+
+Install (Claude Code 2.1.287 or later):
+
+    claude plugin marketplace add helenkwok/gsd-status-mod
+    claude plugin install gsd-status-mod@helenkwok-mods
+
+It is a Claude Code **mod**. It adds a live pane and four smaller things, each showing what the GSD statusline does not:
 
     GSD · stopped: PAUSED 2026-09-09 after the schema review · 9/14 phases  ⚠ ~124 commits since STATE.md   <- above the prompt
     ❯ /gsd-execute-phase 2                                                                                          <- dim suggestion, Tab to take

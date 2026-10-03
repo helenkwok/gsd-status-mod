@@ -207,6 +207,9 @@ test("reader: pages cut at a line and not inside a fence; frontmatter hidden; br
   const dir = panelModel({ reader: { path: ".planning/phases", isFile: false, entries: [e("04-billing", "dir")] } }, 62);
   assert.equal(dir.panels.length, 1);
   assert.ok(dir.panels[0].lines.some((l) => l.button?.key === "reader:open:04-billing"));
+  const keys = (m) => m.panels[0].lines.filter((l) => l.button).map((l) => l.button.key);
+  assert.ok(!keys(panelModel({ reader: { path: ".planning", isFile: false, entries: [] } }, 62)).includes("reader:close")); // at the top, back already leaves
+  assert.ok(keys(dir).includes("reader:close") && keys(dir).includes("reader:up")); // deeper, one button leaves at once
   const file = panelModel({ reader: { path: ".planning/ROADMAP.md", isFile: true, text: "---\na: b\n---\n# Hi\n- [x] done\n- [ ] todo" } }, 62);
   assert.ok(file.panels[0].lines.some((l) => l.md === "# Hi\n- ✓ done\n- ○ todo"));
   const huge = panelModel({ reader: { path: ".planning/x.md", isFile: true, text: "z".repeat(30000) } }, 62);

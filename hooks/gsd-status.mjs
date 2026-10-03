@@ -232,6 +232,7 @@ async function readerPress($, key) {
   if (kind === "browse") return openReader($, ".planning");
   if (kind === "open-path") return openReader($, arg);
   if (!reader) return;
+  if (kind === "close") { reader = null; $.ui.invalidate("ui.render"); return; }
   if (kind === "open") return openReader($, `${reader.path}/${arg}`);
   if (kind === "up") {
     if (!reader.isFile && reader.path === ".planning") { reader = null; $.ui.invalidate("ui.render"); return; }

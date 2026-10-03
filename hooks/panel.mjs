@@ -165,6 +165,7 @@ export function browseList(entries) {
 function readerModel(rd, header, inner) {
   const crumb = String(rd.path).replace(/^\.planning\/?/, "") || ".planning";
   const lines = [{ button: { key: "reader:up", label: rd.path === ".planning" ? "‹ back to the dashboard" : "‹ back", color: C.dim, hotkey: "b" } }];
+  if (rd.path !== ".planning") lines.push({ button: { key: "reader:close", label: "⌂ dashboard", color: C.dim, hotkey: "d" } });
   let right = null;
   if (rd.isFile) {
     // The engine refuses the WHOLE pane if one Markdown block passes 10000 characters, so a block is cut at 9900 as a last resort.

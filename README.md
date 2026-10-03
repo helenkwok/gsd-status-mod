@@ -4,7 +4,7 @@ A live dashboard for [GSD](https://github.com/open-gsd/gsd-core) projects, as a 
 marked, an agent tree with forks and sub-agents and live clocks, context and cost, work streams, and a built-in markdown
 reader for `.planning`. Read-only, no dependencies, and it draws nothing outside a GSD project.
 
-![Demo: the pane while two agents run, the blockers opened, then the markdown reader opening a phase plan and returning to the dashboard](docs/screenshots/demo.gif)
+![Demo: the pane while three agents run with their typical times beside the clocks, the pace details, the trends view, then the markdown reader opening a phase plan and returning to the dashboard](docs/screenshots/demo.gif)
 
 Install (Claude Code 2.1.287 or later):
 
@@ -84,18 +84,19 @@ main box does show them, for the one-glance view.
 ## Screenshots
 
 The seven below are from a made-up demo project (`acme-portal`). The four pane images are the pane's own output from a live
-Claude Code session with three background agents, drawn to PNG from the terminal text (cropped to the pane); the three
+Claude Code session with three background agents and a seeded made-up history, drawn to PNG from the terminal text (cropped to the pane); the three
 band images are from a terminal at least 16 rows tall.
 
-**The pane.** From the top: the main box (context, cost, limits, blockers), the roadmap with the current phase marked,
-the agents (one running, two finished, one folded behind `1 more finished`), the last turn, and the work streams.
+**The pane.** From the top: the main box (context, cost, limits, blockers), the roadmap with the current phase marked, the
+pace box (the plans left, their waves, and a "serial" note when each waits for the one before), the agents with a typical
+time beside each running clock (`typ 0:40`, from past runs), the last turn, and the work streams.
 
-![The live pane: main box, roadmap, agents, last turn and work streams](docs/screenshots/pane-overview.png)
+![The live pane: main box, roadmap, pace, agents with typical times, last turn and work streams](docs/screenshots/pane-overview.png)
 
-**The pane with rows opened.** Pressing `b` opened the blockers and `1` opened the first agent's full task, id and status.
-The same rows open by clicking their `▸`.
+**The pane with the pace details opened.** Pressing `p` opened the wave-by-wave plan list, the time by agent type, and this
+phase's time by stage. The other `▸` rows open the same way, by click or key.
 
-![The pane with the blockers and one agent row expanded](docs/screenshots/pane-expanded.png)
+![The pane with the pace details expanded: waves, time by agent type and this phase's time by stage](docs/screenshots/pane-expanded.png)
 
 **The markdown reader.** A phase plan opened from `o: ▸ read .planning`: the YAML header is hidden, tasks show as `✓` and `○`,
 and the two blue links are relative links that open the next plan and the roadmap in the same pane.

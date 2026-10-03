@@ -1,0 +1,7 @@
+{
+  "name": "gsd-status-mod",
+  "version": "0.1.0",
+  "description": "A Claude Code mod that shows GSD phase, status and plan progress above the prompt, read from .planning/STATE.md.",
+  "author": { "name": "Helen Kwok" },
+  "license": "MIT"
+}

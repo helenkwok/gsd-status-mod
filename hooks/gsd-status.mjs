@@ -232,6 +232,7 @@ async function readerPress($, key) {
   if (kind === "browse") return openReader($, ".planning");
   if (kind === "open-path") return openReader($, arg);
   if (!reader) return;
+  if (kind === "top") return void (await $.ui.scroll({ in: PANE, to: "start" }));
   if (kind === "close") { reader = null; $.ui.invalidate("ui.render"); return; }
   if (kind === "open") return openReader($, `${reader.path}/${arg}`);
   if (kind === "up") {

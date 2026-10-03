@@ -212,6 +212,7 @@ test("reader: pages cut at a line and not inside a fence; frontmatter hidden; br
   assert.ok(keys(dir).includes("reader:close") && keys(dir).includes("reader:up")); // deeper, one button leaves at once
   const file = panelModel({ reader: { path: ".planning/ROADMAP.md", isFile: true, text: "---\na: b\n---\n# Hi\n- [x] done\n- [ ] todo" } }, 62);
   assert.ok(file.panels[0].lines.some((l) => l.md === "# Hi\n- ✓ done\n- ○ todo"));
+  assert.equal(file.panels[0].lines.at(-1).button?.key, "reader:top"); // the last row of a file is the way back to its top
   const huge = panelModel({ reader: { path: ".planning/x.md", isFile: true, text: "z".repeat(30000) } }, 62);
   assert.ok(huge.panels[0].lines.filter((l) => l.md !== undefined).every((l) => l.md.length <= 9900));
   const { resolveLink } = await import("../hooks/gsd-status.mjs");

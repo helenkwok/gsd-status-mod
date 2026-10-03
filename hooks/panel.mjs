@@ -170,6 +170,7 @@ function readerModel(rd, header, inner) {
   if (rd.isFile) {
     // The engine refuses the WHOLE pane if one Markdown block passes 10000 characters, so a block is cut at 9900 as a last resort.
     for (const chunk of pages(tick(stripFrontmatter(rd.text)))) lines.push({ md: chunk.slice(0, 9900) });
+    lines.push({ button: { key: "reader:top", label: "↑ back to top", color: C.dim, hotkey: "t" } });
   } else {
     const list = browseList(rd.entries);
     if (!list.length) lines.push([["no markdown here", C.dim]]);

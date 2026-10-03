@@ -1,5 +1,6 @@
 // Pure: what the GSD pane draws, as data. No $ access, so it is testable under plain Node.
 // A segment is [text, color, flags]: color is a Claude Code theme token or null, flags "b" for bold, "d" for dim.
+import { typical, phaseTotals, dailyBuckets, spark, dur } from "./history.mjs";
 import { frontmatter, summarize, items } from "./state-line.mjs";
 
 // Theme tokens, so the pane follows the person's theme (light, dark, colour-blind) the way the engine's own UI does.
@@ -220,7 +221,42 @@ function readerModel(rd, header, inner) {
   return { header, panels: [{ id: "reader", color: C.arch, title: [[cut(crumb, inner - 8), C.arch, "b"]], right, lines }] };
 }
 
+// The trends view: replaces the dashboard. Three charts from the recorded runs, each labelled with its numbers.
+function trendsModel(inp, header, inner, now) {
+  const runs = inp.history ?? [];
+  const lines = [{ button: { key: "trends", label: "‹ back", color: C.dim, hotkey: "b" } }];
+  const ex = runs.filter((r) => shortType(r[1]) === "executor").slice(-30).map((r) => r[3]);
+  lines.push([["executor time per run", null, "b"], [`  last ${ex.length}`, C.dim]]);
+  if (ex.length < 3) lines.push([["not enough executor runs yet (3 needed)", C.dim]]);
+  else {
+    const o = [...ex].sort((a, b) => a - b);
+    lines.push([[spark(ex), C.main]]);
+    lines.push([[`min ${dur(o[0])} · median ${dur(o[(o.length - 1) >> 1])} · max ${dur(o[o.length - 1])} · last ${dur(ex[ex.length - 1])}`, C.dim]]);
+  }
+  lines.push([[" ", null]]);
+  const ph = phaseTotals(runs);
+  lines.push([["time by phase and stage", null, "b"]]);
+  lines.push([["█ ", C.agent], ["planning  ", C.dim], ["█ ", C.main], ["executing  ", C.dim], ["█ ", C.ok], ["checking  ", C.dim], ["█ ", C.faint], ["other", C.dim]]);
+  if (!ph.length) lines.push([["no runs recorded yet", C.dim]]);
+  const top = Math.max(1, ...ph.map((x) => x.total)), width = Math.max(8, inner - 14);
+  for (const x of ph) {
+    const bar = [["planning", C.agent], ["executing", C.main], ["checking", C.ok], ["other", C.faint]].filter(([k]) => x[k] > 0).map(([k, c]) => ["█".repeat(Math.max(1, Math.round((x[k] / top) * width))), c]);
+    lines.push([[`ph ${x.phase}`.padEnd(6), C.dim], ...bar, [` ${dur(x.total)}`, null]]);
+  }
+  lines.push([[" ", null]]);
+  const days = dailyBuckets(runs, now, 14);
+  const day = (ms) => new Date(ms).toLocaleDateString("en", { month: "short", day: "numeric" });
+  const peak = days.reduce((m, d) => (d.ms > m.ms ? d : m), days[0]);
+  lines.push([["agent time per day", null, "b"], ["  last 14 days", C.dim]]);
+  lines.push([[spark(days.map((d) => d.ms)), C.agent]]);
+  lines.push([[`${day(days[0].start)} to today` + (peak.ms > 0 ? ` · peak ${dur(peak.ms)} on ${day(peak.start)}` : ""), C.dim]]);
+  lines.push([[" ", null]]);
+  lines.push([[cut("phase = STATE.md's current_phase when the agent started", inner), C.dim]]);
+  return { header, panels: [{ id: "trends", color: C.amber, title: [["trends", C.amber, "b"]], right: [[`${runs.length} agents recorded`, C.dim]], lines }] };
+}
+
 // in: {
+//   history: [[endedAt, type, phase, durMs, turns, inTok, outTok, model]],   // finished agents of this project
 //   plans: [{ id, wave, done }],   // the current phase's plans
 //   reader: { path, isFile, entries, text } | null,   // the markdown reader, when open
 //   roadmap: ROADMAP.md text | null,
@@ -236,7 +272,7 @@ function readerModel(rd, header, inner) {
 //   now: ms }
 // -> { header: segments, panels: [{ id, color, title: segments, right: segments|null, lines: [segments] }] }
 export function panelModel(inp, width = 62) {
-  const ex = { agents: new Set(), finished: false, blockers: false, log: false, roadmap: false, pace: false, ...(inp.expand ?? {}) };
+  const ex = { agents: new Set(), finished: false, blockers: false, log: false, roadmap: false, pace: false, trends: false, ...(inp.expand ?? {}) };
   const w = Math.max(36, width);
   const inner = w - 4; // the border and one column of padding on each side
   const fm = frontmatter(inp.state ?? "") ?? {};
@@ -248,6 +284,7 @@ export function panelModel(inp, width = 62) {
   const header = [["GSD", C.main, "b"], ...(ws ? [[" · ", C.dim], [cut(ws.name, 24), C.amber]] : []), ...(phase ? [[" · ", C.dim], [cut(phase, w - 22), null, "b"]] : []), ...(fm.status ? [[` · ${fm.status}`, C.dim]] : [])];
 
   if (inp.reader) return readerModel(inp.reader, header, inner);
+  if (ex.trends) return trendsModel(inp, header, inner, now);
 
   // main: the session's vitals, and anything that needs a person
   const main = [];
@@ -316,7 +353,8 @@ export function panelModel(inp, width = 62) {
   const shape = planShape(inp.plans);
   const pace = agentPace(inp.agents, now);
   const showTime = pace.total >= 60000;
-  if (shape.total || showTime) {
+  const hist = inp.history ?? [];
+  if (shape.total || showTime || hist.length) {
     const lines = [];
     const serialPlans = shape.open >= 2 && shape.widest === 1;
     const serialRun = pace.executors >= 2 && pace.executorParallel != null && pace.executorParallel < 1.15 && pace.total >= 120000;
@@ -327,10 +365,13 @@ export function panelModel(inp, width = 62) {
       if (serialRun) lines.push([["serial: executors ran one at a time", C.amber], [` ×${pace.executorParallel.toFixed(1)}`, C.dim]]);
     }
     lines.push({ button: { key: "pace", label: `${ex.pace ? "▾ hide" : "▸"} details`, color: C.dim, hotkey: "p" } });
+    if (hist.length) lines.push({ button: { key: "trends", label: "▸ trends", color: C.dim, hotkey: "t" } });
     if (ex.pace) {
       for (const [wave, list] of shape.byWave) lines.push([[`  wave ${wave}  `, C.dim], [list.map((p) => `${p.id} ${p.done ? "✓" : "○"}`).join("  "), null]]);
       const wid = Math.max(...pace.byType.map(([t]) => t.length)) + 2;
       for (const [t, ms] of pace.byType) lines.push([[`  ${t.padEnd(wid)}`, C.dim], [clock(ms), null], [`  ${Math.round((100 * ms) / pace.total)}%`, C.dim]]);
+      const here = phaseTotals(hist.filter((r) => String(r[2]) === String(fm.current_phase ?? "")), 1)[0];
+      if (here) lines.push([["  this phase  ", C.dim], [["planning", "executing", "checking"].filter((k) => here[k] > 0).map((k) => `${k} ${dur(here[k])}`).join(" · "), null]]);
       if (pace.executors >= 2 && pace.executorParallel != null) lines.push([["  executors in parallel ", C.dim], [`×${pace.executorParallel.toFixed(2)}`, null]]);
     }
     panels.push({ id: "pace", color: C.amber, title: [["pace", C.amber, "b"]], right: shape.total && serialPlans ? [["serial", C.amber]] : null, lines });
@@ -350,13 +391,15 @@ export function panelModel(inp, width = 62) {
       const glyph = isRun ? "◐" : bad ? "✗" : "✓";
       const t = isRun ? now - (a.since ?? now) : (a.endedAt ?? now) - (a.since ?? now);
       const right = a.since ? clock(Math.max(0, t)) : "";
+      const typ = isRun && a.since ? typical(inp.history, a.type) : null; // what this kind of agent usually takes here
+      const typTxt = typ ? ` · typ ${clock(typ)}` : "";
       const indent = a.depth ? "  ".repeat(Math.min(a.depth, 3) - 1) + "└ " : "";
       const label = `${a.isFork ? "⑂ " : ""}${shortType(a.type)} `;
-      const room = Math.max(4, inner - 8 - indent.length - label.length - right.length - 1);
+      const room = Math.max(4, inner - 8 - indent.length - label.length - right.length - typTxt.length - 1);
       const open = ex.agents.has(a.id);
       lines.push({
         toggle: { key: `agent:${a.id}`, open, hotkey: i < 6 ? String(i + 1) : undefined },
-        segs: [[`${glyph} `, isRun ? C.agent : bad ? C.warn : C.ok], [indent, C.faint], [label, null, "b"], [cut(String(a.description ?? "").replace(/\s+/g, " "), room).padEnd(room + 1), C.dim], [right, isRun ? C.agent : C.dim]],
+        segs: [[`${glyph} `, isRun ? C.agent : bad ? C.warn : C.ok], [indent, C.faint], [label, null, "b"], [cut(String(a.description ?? "").replace(/\s+/g, " "), room).padEnd(room + 1), C.dim], [right, isRun ? C.agent : C.dim], ...(typTxt ? [[typTxt, t > 2 * typ ? C.amber : C.dim]] : [])],
       });
       if (open) {
         const full = String(a.description ?? "").replace(/\s+/g, " ").trim();

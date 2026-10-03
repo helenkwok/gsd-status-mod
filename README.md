@@ -47,7 +47,13 @@ It is a Claude Code **mod**. It adds a live pane and four smaller things, each s
     session's agent time went (share by agent type, and how parallel the executors ran, 1.0 being one at a time). It
     says "serial" only on clear evidence: plans left in single-plan waves, or two or more executors that ran one at a
     time. Plans come from `wave:` in the phase's `*-PLAN.md` frontmatter; a plan with a `NN-MM-SUMMARY.md` is done.
-    `p` shows the wave-by-wave list and the time by type.
+    `p` shows the wave-by-wave list, this phase's time by stage, and the time by type.
+    *History:* each finished agent leaves one small record, kept in the plugin's own store across sessions (the last 300
+    per project): type, phase, duration, number of model responses, token counts and model. No description, no prompt, no
+    text. With five or more past runs of a kind, a running agent's clock shows `typ 0:20` beside it, in amber once it is
+    over twice the typical. `t: ▸ trends` opens three charts: executor time per run (a sparkline of the last 30), time by
+    phase split into planning, executing and checking, and agent time per day for 14 days, each with its numbers beside it.
+    History starts from the day you update; it is per project and never read from transcripts.
   - *agents*: a tree of running and finished agents, with forks (`⑂`) and sub-agents under their parent, and a live
     clock. Finished agents fold away while others run.
   - *markdown reader*: `o: ▸ read .planning` (or any entry under *work streams*) swaps the dashboard for a browser of
@@ -59,7 +65,7 @@ It is a Claude Code **mod**. It adds a live pane and four smaller things, each s
     *session log* of prompts, spawns, errors and new commits.
 
   Everything with a `▸` is clickable. With the pane focused (`ctrl+x`, then `Tab`) hotkeys work too: `1`-`6` agent rows,
-  `b` blockers, `r` roadmap, `p` pace, `w` workstream, `o` read `.planning`, `f` finished agents, `l` log. The pane is read-only. The cost is whatever Claude Code
+  `b` blockers, `r` roadmap, `p` pace, `t` trends, `w` workstream, `o` read `.planning`, `f` finished agents, `l` log. The pane is read-only. The cost is whatever Claude Code
   reports for the session, shown as is; it is an estimate, not a bill. The band above the prompt is hidden while the
   pane is open, so the same line is not drawn twice.
 
@@ -77,7 +83,7 @@ main box does show them, for the one-glance view.
 
 ## Screenshots
 
-The six below are from a made-up demo project (`acme-portal`). The three pane images are the pane's own output from a live
+The seven below are from a made-up demo project (`acme-portal`). The four pane images are the pane's own output from a live
 Claude Code session with three background agents, drawn to PNG from the terminal text (cropped to the pane); the three
 band images are from a terminal at least 16 rows tall.
 
@@ -95,6 +101,12 @@ The same rows open by clicking their `▸`.
 and the two blue links are relative links that open the next plan and the roadmap in the same pane.
 
 ![The markdown reader showing a phase plan: heading, links, task list, quote, table and code](docs/screenshots/pane-reader.png)
+
+**The trends view.** Opened with `t: ▸ trends`. The numbers behind it are made up for the demo (38 agents over four phases),
+since a fresh demo project has no history: executor time per run, time by phase split into planning, executing and
+checking, and agent time per day.
+
+![The trends view: executor time per run, time by phase and stage, and agent time per day](docs/screenshots/pane-trends.png)
 
 **The band, in the three images below.** The `◐ medium · /effort`
 row, the `Sonnet 5.5 │ v1.0 · paused │ acme-portal` statusline and the `auto mode on` text are Claude Code's and the
@@ -124,12 +136,12 @@ Read-only, and nothing leaves the machine:
   named in a `.git` file). Paths resolve from the session root (`$.session.root`), not the current folder, so a Bash
   `cd` does not lose the project. In a linked git worktree with no `.planning` of its own, `.planning` is read from the
   main checkout.
-- **Session data**: `$.session.usage` (context, cost, limits), `$.agent.list` (the live agents) and `$.clock.now` /
+- **Session data**: `$.session.usage` (context, cost, limits), `$.agent.list` (the live agents), `$.store` (the history above, in the plugin's own store) and `$.clock.now` /
   `$.clock.every` (a 1-second redraw timer, active only while something runs and the pane is open).
 - **UI**: `$.ui.open`, `$.ui.close`, `$.ui.invalidate` and `$.ui.resolve` for the pane and band, `$.command.register` for
   `/gsd-status` and `/gsd-board`, and `$.prompt.suggest` (a dim suggestion in the empty prompt box: it cannot send anything).
-- **Hooks it listens to**: `session.start`, `turn.start`, `turn.complete`, `tool.call` and `agent.spawn` (to count edits and
-  errors and note forks; it never changes or blocks a call), `command.run`, `ui.render` and `ui.close`.
+- **Hooks it listens to**: `session.start`, `turn.start`, `turn.step`, `turn.complete`, `tool.call` and `agent.spawn` (to count edits and
+  errors, count an agent's responses and record how long it ran, and note forks; it never changes or blocks a call), `command.run`, `ui.render` and `ui.close`.
 
 It writes no files, runs no processes and makes no network calls. Check it
 yourself: `claude plugin validate .claude-plugin/plugin.json` prints the hooks and the `$` calls the module makes.

@@ -246,3 +246,31 @@ test("pace: plan shape, agent time shares, parallelism, and a hint only on clear
   assert.ok(!wide.some((l) => /serial/.test(l)));
   assert.equal(panelModel({ state, plans: [], agents: [], now: 0 }, 62).panels.some((x) => x.id === "pace"), false);
 });
+
+test("history: typical beside a running clock (amber when slow), trends button, trends view, this phase's stages", async () => {
+  const { panelModel } = await import("../hooks/panel.mjs");
+  const MIN = 60000, B = 1e9;
+  const hist = [10, 20, 30, 40, 50].map((m, i) => [B + i, "gsd-executor", "4", m * MIN, 50, 1, 1, "m"]);
+  const state = "---\ncurrent_phase: 4\n---\n";
+  const agentRow = (m) => m.panels.find((x) => x.id === "agents").lines.find((l) => l.segs).segs;
+  const txt = (segs) => segs.map((s) => s[0]).join("");
+  const slow = panelModel({ state, history: hist, agents: [{ id: "a", type: "gsd-executor", description: "Execute plan 01", status: "running", since: B }], now: B + 70 * MIN }, 70);
+  assert.match(txt(agentRow(slow)), /70:00 · typ 30:00/);
+  assert.equal(agentRow(slow).at(-1)[1], "warning"); // over twice the typical
+  const ok = panelModel({ state, history: hist, agents: [{ id: "a", type: "gsd-executor", description: "x", status: "running", since: B }], now: B + 40 * MIN }, 70);
+  assert.equal(agentRow(ok).at(-1)[1], "inactive");
+  const few = panelModel({ state, history: hist.slice(0, 4), agents: [{ id: "a", type: "gsd-executor", description: "x", status: "running", since: B }], now: B + 5 * MIN }, 70);
+  assert.ok(!/typ/.test(txt(agentRow(few)))); // fewer than five runs: nothing is called typical
+  const lines = slow.panels.find((x) => x.id === "pace").lines;
+  assert.ok(lines.some((l) => l.button?.key === "trends"));
+  const tr = panelModel({ state, history: hist, expand: { trends: true }, now: B + 60 * MIN }, 70);
+  assert.equal(tr.panels.length, 1);
+  assert.equal(tr.panels[0].id, "trends");
+  const flat = tr.panels[0].lines.map((l) => (Array.isArray(l) ? l.map((s) => s[0]).join("") : l.button.label)).join("\n");
+  assert.match(flat, /executor time per run/);
+  assert.match(flat, /time by phase and stage/);
+  assert.match(flat, /agent time per day/);
+  assert.match(flat, /median 30m/);
+  const open = panelModel({ state, history: hist, plans: [{ id: "a", wave: 1, done: false }], expand: { pace: true }, now: B }, 70).panels.find((x) => x.id === "pace").lines;
+  assert.ok(open.some((l) => Array.isArray(l) && /this phase/.test(l[0][0]) && /executing 2h30/.test(l[1][0])));
+});

@@ -1,6 +1,6 @@
 {
   "name": "gsd-status-mod",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "A Claude Code mod for GSD projects: a live pane (roadmap, agent tree with forks, cost and context, work streams, session log) plus a status band, a next-action hint and /gsd-status, read from .planning/.",
   "author": {
     "name": "Helen Kwok"

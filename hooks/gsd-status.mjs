@@ -1,4 +1,5 @@
 import { frontmatter, isGsdState, resumeLine, handoffInfo, driftNote, statusReport, pickWorkstream } from "./state-line.mjs";
+import { addRun } from "./history.mjs";
 import { panelModel, streamInfo, commitCount, commitFeed, shortPath } from "./panel.mjs";
 
 // The command named by the handoff's next_action (see nextCommand) is offered as a dim suggestion: Tab puts it in the
@@ -13,11 +14,14 @@ let isGsd = false;
 let live = freshLive(); // what the pane draws: events of this session plus what the last refresh read
 let lastRefreshAt = 0;
 const seen = new Map(); // agent id -> { since, status, endedAt }: when this module first saw it, and how it last stood
+let hist = []; // what finished agents of this project left behind (see history.mjs), kept in $.store across sessions
+let histLoaded = false;
+const steps = new Map(); // agent id -> how many model responses it has made so far
 const forks = new Set(); // ids of agents started as forks of their parent (only the spawn event says so)
 const PANE = "gsd-board";
 // What the person has opened in the pane by clicking (or pressing a hotkey): agent rows, finished agents, blockers, streams, log.
 let reader = null; // the markdown reader: { path, isFile, entries | text }, or null for the dashboard
-const expand = { agents: new Set(), roadmap: false, pace: false, finished: false, blockers: false, streams: new Set(), log: false };
+const expand = { agents: new Set(), roadmap: false, pace: false, trends: false, finished: false, blockers: false, streams: new Set(), log: false };
 const PANE_SIZE = { columns: 64, rows: 16 };
 const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
 const STREAMS = ["phases", "spikes", "threads", "quick", "todos", "seeds", "notes"];
@@ -136,6 +140,27 @@ async function readPlans($, state) {
   return out;
 }
 
+const histKey = () => `runs:${root}`;
+
+async function loadHist($) {
+  if (histLoaded) return;
+  histLoaded = true;
+  const h = await $.store.get(histKey()).catch(() => null);
+  hist = Array.isArray(h?.runs) ? h.runs : [];
+}
+
+// An agent's run ended: keep its numbers (no description, no text). Internal agents have no type and are skipped.
+async function recordRun($, e) {
+  const a = live.agents.find((x) => x.id === e.agentId);
+  if (!a?.type || !(e.durationMs > 0)) return;
+  const u = e.usage ?? {};
+  const now = await $.clock.now(); // awaited first: agents that end together must not read `hist` before one another's update lands
+  hist = addRun(hist, [now, a.type, String(frontmatter(live.state)?.current_phase ?? ""), e.durationMs, steps.get(e.agentId) ?? 0,
+    (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0), u.output_tokens ?? 0, u.model ?? ""]);
+  steps.delete(e.agentId);
+  await $.store.set(histKey(), { v: 1, runs: hist }).catch(() => {});
+}
+
 async function readStreams($) {
   const out = [];
   for (const name of STREAMS) {
@@ -151,6 +176,7 @@ async function readStreams($) {
 // Everything the band, the hint and the pane need. The work streams are listed only when `full` (they change rarely).
 async function refresh($, full = true) {
   await findRoot($);
+  await loadHist($);
   await resolvePlan($);
   const now = await $.clock.now();
   lastRefreshAt = now;
@@ -333,8 +359,14 @@ export function register(on, options) {
     }
     return out;
   });
+  // One response by a subagent = one step; the count is what an agent's "turns" in the history are.
+  on("turn.step", async function* ($, e, next) {
+    if (e.agentId) steps.set(e.agentId, (steps.get(e.agentId) ?? 0) + 1);
+    return yield* next(e);
+  });
   on("turn.complete", async ($, e, next) => {
     await refresh($);
+    if (isGsd && e.agentId) await recordRun($, e);
     if (isGsd && !e.agentId) {
       const now = await $.clock.now();
       const t = live.turn;
@@ -380,7 +412,7 @@ export function register(on, options) {
       }
       return Button({ key: l.button.key, label: l.button.label, plain: true, hotkey: l.button.hotkey, onPress: press(l.button.key) });
     };
-    const m = panelModel({ ...live, reader, expand, now: await $.clock.now() }, W);
+    const m = panelModel({ ...live, history: hist, reader, expand, now: await $.clock.now() }, W);
     return Box({
       flexDirection: "column", width: W,
       children: [

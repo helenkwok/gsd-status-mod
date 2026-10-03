@@ -51,7 +51,21 @@ main box does show them, for the one-glance view.
 
 ## Screenshots
 
-All three are from a made-up demo project (`acme-portal`), in a terminal at least 16 rows tall. The `◐ medium · /effort`
+The five below are from a made-up demo project (`acme-portal`). The two pane images are the pane's own output from a live
+Claude Code session with three background agents, drawn to PNG from the terminal text (cropped to the pane); the three
+band images are from a terminal at least 16 rows tall.
+
+**The pane.** From the top: the main box (context, cost, limits, blockers), the roadmap with the current phase marked,
+the agents (one running, two finished, one folded behind `1 more finished`), the last turn, and the work streams.
+
+![The live pane: main box, roadmap, agents, last turn and work streams](docs/screenshots/pane-overview.png)
+
+**The pane with rows opened.** Pressing `b` opened the blockers and `1` opened the first agent's full task, id and status.
+The same rows open by clicking their `▸`.
+
+![The pane with the blockers and one agent row expanded](docs/screenshots/pane-expanded.png)
+
+**The band, in the three images below.** The `◐ medium · /effort`
 row, the `Sonnet 5.5 │ v1.0 · paused │ acme-portal` statusline and the `auto mode on` text are Claude Code's and the
 GSD statusline's own; what this plugin adds is the cyan and yellow line above the prompt, the dim text in the prompt
 box, and `· next: … · handoff 2d ago` at the end of the last row.
@@ -72,11 +86,22 @@ Claude Code's own `Try "…"` text.
 
 ## What it can touch (reach)
 
-Only `$.fs.read` (`.planning/STATE.md`, `.planning/HANDOFF.json`, and the git reflog `.git/logs/HEAD`, or the worktree's
-git dir named in a `.git` file), `$.clock.now`, `$.ui.invalidate`, `$.ui.resolve`, `$.command.register` (the read-only `/gsd-status` command, which only returns text) and `$.prompt.suggest` (a dim suggestion
-in the empty prompt box: it cannot send anything). It does not hook
-tool calls, prompts, permissions or compaction, writes no files, runs no processes and makes no network calls. Check it
-yourself: `claude plugin validate .` prints the `$` calls the module makes.
+Read-only, and nothing leaves the machine:
+
+- **Files** (`$.fs.read`, `$.fs.list`): `.planning/STATE.md`, `ROADMAP.md`, `HANDOFF.json`, the entry names in `.planning/phases`,
+  `spikes`, `threads` and the other work-stream folders, and the git reflog (`.git/logs/HEAD`, or the worktree's git dir
+  named in a `.git` file). Paths resolve from the session root (`$.session.root`), not the current folder, so a Bash
+  `cd` does not lose the project. In a linked git worktree with no `.planning` of its own, `.planning` is read from the
+  main checkout.
+- **Session data**: `$.session.usage` (context, cost, limits), `$.agent.list` (the live agents) and `$.clock.now` /
+  `$.clock.every` (a 1-second redraw timer, active only while something runs and the pane is open).
+- **UI**: `$.ui.open`, `$.ui.close`, `$.ui.invalidate` and `$.ui.resolve` for the pane and band, `$.command.register` for
+  `/gsd-status` and `/gsd-board`, and `$.prompt.suggest` (a dim suggestion in the empty prompt box: it cannot send anything).
+- **Hooks it listens to**: `session.start`, `turn.start`, `turn.complete`, `tool.call` and `agent.spawn` (to count edits and
+  errors and note forks; it never changes or blocks a call), `command.run`, `ui.render` and `ui.close`.
+
+It writes no files, runs no processes and makes no network calls. Check it
+yourself: `claude plugin validate .claude-plugin/plugin.json` prints the hooks and the `$` calls the module makes.
 
 ## Compatibility with other mods
 
@@ -103,16 +128,16 @@ Needs Claude Code 2.1.287 or later (`claude --version`) and Node 20+ only if you
 build or install: the plugin is loaded from its folder for one session.
 
     git clone https://github.com/helenkwok/gsd-status-mod ~/gsd-status-mod
-    cd <a GSD project>        # start from the project root: it reads .planning/STATE.md relative to the cwd
+    cd <a GSD project>        # it reads .planning from the folder you start claude in (or its main checkout, in a worktree)
     claude --plugin-dir ~/gsd-status-mod
 
-To check the plugin itself: `cd ~/gsd-status-mod`, then `claude plugin validate .` and
-`node --test tests/state-line.test.mjs`.
+To check the plugin itself: `cd ~/gsd-status-mod`, then `claude plugin validate .` (the marketplace file),
+`claude plugin validate .claude-plugin/plugin.json` (the hooks and `$` calls) and `node --test tests/*.test.mjs`.
 
 ## Not handled yet
 
 The band above the prompt is not drawn in a very short terminal window: it appeared at 16 rows and above and not at 13 (the
 engine drops it). The hint tail and the suggestion are unaffected.
 
-Workstream-mode `STATE.md`, walking up from a subdirectory, and Windows (untested). Background:
+Workstream-mode `STATE.md` and Windows (untested). A session in a worktree shows the main checkout's `.planning`, which is wrong if that worktree is on a different phase. Background:
 open-gsd/gsd-core#5174 (a maintainer asked to revisit in-tree support in November 2026; this plugin is the out-of-tree route).

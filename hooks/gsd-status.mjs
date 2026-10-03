@@ -41,11 +41,21 @@ function note(kind, text, at) {
 // Paths are read from the session root, not the current directory: Bash can `cd` anywhere, and a cwd-relative
 // ".planning/STATE.md" then goes missing and the pane flips to "No GSD project here".
 let root = "";
-const at = (path) => (root ? `${root}/${path}` : path);
+let planRoot = ""; // where .planning lives: the session root, or the main checkout when the session is in a linked worktree
+const at = (path) => {
+  const base = path.startsWith(".planning") ? planRoot || root : root;
+  return base ? `${base}/${path}` : path;
+};
 const read = ($, path) => $.fs.read(at(path)).catch(() => null);
 async function findRoot($) {
   if (root) return;
   root = String((await $.session.root().catch(() => "")) ?? "").replace(/\/+$/, "");
+  // A linked worktree has no .planning of its own: its .git file points into <main>/.git/worktrees/<name>.
+  if (root && (await read($, ".planning/STATE.md")) == null) {
+    const ptr = await read($, ".git");
+    const main = /^gitdir:\s*(.+?)[\\/]\.git[\\/]worktrees[\\/][^\\/\s]+\s*$/m.exec(ptr ?? "")?.[1];
+    if (main && (await $.fs.read(`${main}/.planning/STATE.md`).catch(() => null)) != null) planRoot = main;
+  }
 }
 
 // The reflog lives in .git/logs/HEAD; in a linked worktree .git is a file pointing at the real git dir.

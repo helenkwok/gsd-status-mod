@@ -1,4 +1,4 @@
-import { isGsdState, resumeLine, handoffInfo, driftNote, statusReport } from "./state-line.mjs";
+import { isGsdState, resumeLine, handoffInfo, driftNote, statusReport, pickWorkstream } from "./state-line.mjs";
 import { panelModel, streamInfo, commitCount, commitFeed, shortPath } from "./panel.mjs";
 
 // The command named by the handoff's next_action (see nextCommand) is offered as a dim suggestion: Tab puts it in the
@@ -23,6 +23,11 @@ const STREAMS = ["phases", "spikes", "threads", "quick", "todos", "seeds", "note
 
 // A press on one of the pane's buttons: flip what it names. The key says which: "agent:<id>", "stream:<name>", or a word.
 function flip(key) {
+  if (key === "ws") {
+    const n = wsInfo?.names ?? [];
+    if (n.length > 1) wsChoice = n[(n.indexOf(wsInfo.name) + 1) % n.length];
+    return;
+  }
   const [kind, id] = String(key).split(/:(.*)/s);
   const set = kind === "agent" ? expand.agents : kind === "stream" ? expand.streams : null;
   if (set) { if (!set.delete(id)) set.add(id); return; }
@@ -30,7 +35,7 @@ function flip(key) {
 }
 
 function freshLive() {
-  return { state: null, roadmap: null, handoff: null, usage: null, agents: [], streams: [], log: [], isRunning: false, turn: null, receipt: null,
+  return { state: null, roadmap: null, workstream: null, handoff: null, usage: null, agents: [], streams: [], log: [], isRunning: false, turn: null, receipt: null,
     commits: 0, newest: null, startCommits: 0, startCost: null };
 }
 
@@ -46,7 +51,25 @@ const at = (path) => {
   const base = path.startsWith(".planning") ? planRoot || root : root;
   return base ? `${base}/${path}` : path;
 };
+// Workstream mode: STATE.md, ROADMAP.md and the work streams live under .planning/workstreams/<name>/.
+let wsBase = ""; // "" for a normal project, else ".planning/workstreams/<name>"
+let wsChoice = ""; // the workstream the person picked in the pane
+let wsInfo = null; // { name, index, total, names }
+const plan = (name) => `${wsBase || ".planning"}/${name}`;
 const read = ($, path) => $.fs.read(at(path)).catch(() => null);
+async function resolvePlan($) {
+  wsBase = ""; wsInfo = null;
+  if ((await read($, ".planning/STATE.md")) != null) return;
+  const dirs = (await $.fs.list(at(".planning/workstreams")).catch(() => [])).filter((e) => e.kind === "dir" && !e.name.startsWith("."));
+  const cands = [];
+  for (const d of dirs) {
+    const st = await $.fs.stat(at(`.planning/workstreams/${d.name}/STATE.md`)).catch(() => null);
+    if (st) cands.push({ name: d.name, mtimeMs: st.mtimeMs ?? 0 });
+  }
+  const pick = pickWorkstream(cands, (await read($, ".planning/active-workstream")) ?? "", wsChoice);
+  if (pick) { wsInfo = pick; wsBase = `.planning/workstreams/${pick.name}`; }
+}
+
 async function findRoot($) {
   if (root) return;
   root = String((await $.session.root().catch(() => "")) ?? "").replace(/\/+$/, "");
@@ -54,7 +77,7 @@ async function findRoot($) {
   if (root && (await read($, ".planning/STATE.md")) == null) {
     const ptr = await read($, ".git");
     const main = /^gitdir:\s*(.+?)[\\/]\.git[\\/]worktrees[\\/][^\\/\s]+\s*$/m.exec(ptr ?? "")?.[1];
-    if (main && (await $.fs.read(`${main}/.planning/STATE.md`).catch(() => null)) != null) planRoot = main;
+    if (main && ((await $.fs.read(`${main}/.planning/STATE.md`).catch(() => null)) != null || (await $.fs.list(`${main}/.planning/workstreams`).catch(() => [])).length)) planRoot = main;
   }
 }
 
@@ -95,7 +118,7 @@ async function readAgents($, now) {
 async function readStreams($) {
   const out = [];
   for (const name of STREAMS) {
-    const info = streamInfo(await $.fs.list(at(`.planning/${name}`)).catch(() => []));
+    const info = streamInfo(await $.fs.list(at(plan(name))).catch(() => []));
     if (info) out.push({ name, ...info });
   }
   return out;
@@ -104,11 +127,12 @@ async function readStreams($) {
 // Everything the band, the hint and the pane need. The work streams are listed only when `full` (they change rarely).
 async function refresh($, full = true) {
   await findRoot($);
+  await resolvePlan($);
   const now = await $.clock.now();
   lastRefreshAt = now;
-  const state = await read($, ".planning/STATE.md");
+  const state = await read($, plan("STATE.md"));
   isGsd = state != null && isGsdState(state);
-  const handoffText = isGsd ? await read($, ".planning/HANDOFF.json") : null;
+  const handoffText = isGsd ? (await read($, plan("HANDOFF.json"))) ?? (wsBase ? await read($, ".planning/HANDOFF.json") : null) : null;
   const handoff = handoffText == null ? null : handoffInfo(handoffText, now);
   rows = { resume: isGsd ? resumeLine(state) : null, handoff: handoff?.line ?? null, command: handoff?.command ?? null, drift: null };
   if (!isGsd) { live = freshLive(); $.ui.invalidate("ui.render"); return; }
@@ -128,19 +152,21 @@ async function refresh($, full = true) {
     live.commits = commitCount(log);
   }
   live.state = state;
+  live.workstream = wsInfo;
   live.handoff = parsed;
   live.usage = await readUsage($);
   live.agents = await readAgents($, now);
-  if (full) { live.streams = await readStreams($); live.roadmap = await read($, ".planning/ROADMAP.md"); }
+  if (full) { live.streams = await readStreams($); live.roadmap = await read($, plan("ROADMAP.md")); }
   $.ui.invalidate("ui.render"); // render output is cached until invalidated
 }
 
 // /gsd-status: the full report, read fresh from disk each time so it is never behind the band.
 async function report($) {
   await findRoot($);
-  const state = await read($, ".planning/STATE.md");
+  await resolvePlan($);
+  const state = await read($, plan("STATE.md"));
   const ok = state != null && isGsdState(state);
-  const handoff = ok ? await read($, ".planning/HANDOFF.json") : null;
+  const handoff = ok ? (await read($, plan("HANDOFF.json"))) ?? (wsBase ? await read($, ".planning/HANDOFF.json") : null) : null;
   let drift = null;
   if (ok && /^state_head:/m.test(state)) {
     const log = await reflog($);
@@ -266,7 +292,7 @@ export function register(on, options) {
     if (!isGsd) return Text({ dimColor: true, children: "No GSD project here." });
     const W = Math.max(40, e.props.bodyColumns);
     const segs = (list) => list.map(([text, color, flags]) => Text({ ...(color ? { color } : {}), ...(flags === "b" ? { bold: true } : {}), children: text }));
-    const press = (key) => () => { flip(key); $.ui.invalidate("ui.render"); };
+    const press = (key) => () => { flip(key); if (key === "ws") void refresh($); else $.ui.invalidate("ui.render"); };
     // A line is plain text, a row with a ▸/▾ button in front, or one whole-line button.
     const line = (l) => {
       if (Array.isArray(l)) return Text({ wrap: "truncate", children: segs(l) });

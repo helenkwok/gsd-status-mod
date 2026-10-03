@@ -178,3 +178,14 @@ test("statusReport: tolerates a sparse STATE.md and odd list shapes", () => {
   assert.equal(r.isGsd, true);
   assert.ok(!r.text.includes("Next:"));
 });
+
+test("pickWorkstream: the person's pick, else the marker, else the most recently changed", async () => {
+  const { pickWorkstream } = await import("../hooks/state-line.mjs");
+  const c = [{ name: "emsd", mtimeMs: 5 }, { name: "nrb2", mtimeMs: 9 }];
+  assert.equal(pickWorkstream([], "", ""), null);
+  assert.deepEqual(pickWorkstream(c, "", ""), { name: "nrb2", index: 2, total: 2, names: ["emsd", "nrb2"] });
+  assert.equal(pickWorkstream(c, "emsd\n", "").name, "emsd");
+  assert.equal(pickWorkstream(c, "emsd", "nrb2").name, "nrb2");
+  assert.equal(pickWorkstream(c, "gone", "gone").name, "nrb2");
+  assert.equal(pickWorkstream([c[0]], "", "").total, 1);
+});

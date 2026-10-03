@@ -39,9 +39,15 @@ showing what the GSD statusline does not:
     *session log* of prompts, spawns, errors and new commits.
 
   Everything with a `▸` is clickable. With the pane focused (`ctrl+x`, then `Tab`) hotkeys work too: `1`-`6` agent rows,
-  `b` blockers, `r` roadmap, `f` finished agents, `l` log. The pane is read-only. The cost is whatever Claude Code
+  `b` blockers, `r` roadmap, `w` workstream, `f` finished agents, `l` log. The pane is read-only. The cost is whatever Claude Code
   reports for the session, shown as is; it is an estimate, not a bill. The band above the prompt is hidden while the
   pane is open, so the same line is not drawn twice.
+
+**Workstream mode.** When `.planning/STATE.md` is missing but `.planning/workstreams/<name>/STATE.md` exists, the pane reads
+that workstream's `STATE.md`, `ROADMAP.md` and work streams (and its `HANDOFF.json`, else the top-level one). GSD's own
+choice of active workstream is per session and a mod cannot see it, so the plugin uses the name in
+`.planning/active-workstream` if there is one, else the workstream whose `STATE.md` changed most recently. With more than
+one, a `w: ⇄ workstream …` button (click, or `w`) switches to the next. The workstream name shows in the header.
 
 Everything follows a `.planning` symlink and draws nothing when there is nothing to show. The band and hint refresh at
 session start and after each turn; the pane also refreshes on tool calls and agent events.
@@ -88,7 +94,7 @@ Claude Code's own `Try "…"` text.
 
 Read-only, and nothing leaves the machine:
 
-- **Files** (`$.fs.read`, `$.fs.list`): `.planning/STATE.md`, `ROADMAP.md`, `HANDOFF.json`, the entry names in `.planning/phases`,
+- **Files** (`$.fs.read`, `$.fs.list`, `$.fs.stat`): `.planning/STATE.md`, `ROADMAP.md`, `HANDOFF.json`, the entry names in `.planning/phases`,
   `spikes`, `threads` and the other work-stream folders, and the git reflog (`.git/logs/HEAD`, or the worktree's git dir
   named in a `.git` file). Paths resolve from the session root (`$.session.root`), not the current folder, so a Bash
   `cd` does not lose the project. In a linked git worktree with no `.planning` of its own, `.planning` is read from the
@@ -139,5 +145,5 @@ To check the plugin itself: `cd ~/gsd-status-mod`, then `claude plugin validate 
 The band above the prompt is not drawn in a very short terminal window: it appeared at 16 rows and above and not at 13 (the
 engine drops it). The hint tail and the suggestion are unaffected.
 
-Workstream-mode `STATE.md` and Windows (untested). A session in a worktree shows the main checkout's `.planning`, which is wrong if that worktree is on a different phase. Background:
+Windows (untested). A session in a worktree shows the main checkout's `.planning`, which is wrong if that worktree is on a different phase. Background:
 open-gsd/gsd-core#5174 (a maintainer asked to revisit in-tree support in November 2026; this plugin is the out-of-tree route).

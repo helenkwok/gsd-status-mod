@@ -152,7 +152,8 @@ export function panelModel(inp, width = 62) {
   const now = inp.now ?? 0;
 
   const phase = fm.current_phase ? `phase ${fm.current_phase}${fm.current_phase_name ? " " + fm.current_phase_name : ""}` : fm.milestone ?? "";
-  const header = [["GSD", C.main, "b"], ...(phase ? [[" · ", C.dim], [cut(phase, w - 22), null, "b"]] : []), ...(fm.status ? [[` · ${fm.status}`, C.dim]] : [])];
+  const ws = inp.workstream ?? null;
+  const header = [["GSD", C.main, "b"], ...(ws ? [[" · ", C.dim], [cut(ws.name, 24), C.amber]] : []), ...(phase ? [[" · ", C.dim], [cut(phase, w - 22), null, "b"]] : []), ...(fm.status ? [[` · ${fm.status}`, C.dim]] : [])];
 
   // main: the session's vitals, and anything that needs a person
   const main = [];
@@ -171,6 +172,7 @@ export function panelModel(inp, width = 62) {
     }
     main.push(row);
   }
+  if (ws && ws.total > 1) main.push({ button: { key: "ws", label: `⇄ workstream ${cut(ws.name, inner - 26)} · ${ws.index} of ${ws.total}`, color: C.amber, hotkey: "w" } });
   const h = inp.handoff;
   const blockers = h ? listLen(h.blockers) : 0;
   const people = h ? listLen(h.human_actions_pending) : 0;

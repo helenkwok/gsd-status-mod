@@ -174,3 +174,15 @@ export function statusReport(stateText, handoffText, now = Date.now(), drift = n
   }
   return { isGsd: true, text: out.join("\n") };
 }
+
+// Workstream mode keeps one STATE.md per workstream under .planning/workstreams/<name>/. Which one is "the" project is
+// GSD's own per-session choice, which a mod cannot see, so: the person's pick in the pane, else the name in
+// .planning/active-workstream, else the one that changed most recently.
+// cands: [{ name, mtimeMs }] (only workstreams that have a STATE.md) -> { name, index, total, names } | null
+export function pickWorkstream(cands, marker = "", choice = "") {
+  const list = [...(cands ?? [])].sort((a, b) => a.name.localeCompare(b.name));
+  if (!list.length) return null;
+  const newest = [...list].sort((a, b) => (b.mtimeMs ?? 0) - (a.mtimeMs ?? 0))[0];
+  const hit = list.find((c) => c.name === choice) ?? list.find((c) => c.name === String(marker).trim()) ?? newest;
+  return { name: hit.name, index: list.indexOf(hit) + 1, total: list.length, names: list.map((c) => c.name) };
+}

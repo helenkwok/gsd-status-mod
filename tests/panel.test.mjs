@@ -180,3 +180,13 @@ test("roadmap: reads the phase checklist and marks the current phase by its labe
   const none = panelModel({ roadmap: road, state: "---\nstatus: x\n---\n", now: 0 }, 62).panels.find((x) => x.id === "roadmap");
   assert.ok(!none.lines.some((l) => Array.isArray(l) && l[0][0].startsWith("▶")));
 });
+
+test("workstream: named in the header, with a switch button only when there are several", async () => {
+  const { panelModel } = await import("../hooks/panel.mjs");
+  const state = "---\nstatus: executing\ncurrent_phase: 3\n---\n";
+  const two = panelModel({ state, workstream: { name: "emsd", index: 1, total: 2, names: ["emsd", "nrb2"] }, now: 0 }, 62);
+  assert.match(two.header.map((s) => s[0]).join(""), /GSD · emsd · phase 3/);
+  assert.ok(two.panels[0].lines.some((l) => l.button?.key === "ws" && /1 of 2/.test(l.button.label)));
+  const one = panelModel({ state, workstream: { name: "emsd", index: 1, total: 1, names: ["emsd"] }, now: 0 }, 62);
+  assert.ok(!one.panels[0].lines.some((l) => l.button?.key === "ws"));
+});

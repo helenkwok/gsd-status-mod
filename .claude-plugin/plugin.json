@@ -1,7 +1,17 @@
 {
   "name": "gsd-status-mod",
-  "version": "0.1.0",
-  "description": "A Claude Code mod that shows GSD phase, status and plan progress above the prompt, read from .planning/STATE.md.",
-  "author": { "name": "Helen Kwok" },
-  "license": "MIT"
+  "version": "0.2.0",
+  "description": "A Claude Code mod for GSD projects: a live pane (roadmap, agent tree with forks, cost and context, work streams, session log) plus a status band, a next-action hint and /gsd-status, read from .planning/.",
+  "author": {
+    "name": "Helen Kwok"
+  },
+  "license": "MIT",
+  "userConfig": {
+    "openOnStart": {
+      "title": "Open the pane on start",
+      "description": "Open the live GSD pane when a session starts in a GSD project. /gsd-board opens it later either way.",
+      "type": "boolean",
+      "default": true
+    }
+  }
 }

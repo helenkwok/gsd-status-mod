@@ -131,3 +131,50 @@ test("driftNote: not GSD, no state_head, or unknown commit -> null", () => {
   assert.equal(driftNote(fm("status: x"), log, 1), null);
   assert.equal(driftNote(fm("state_head: fffffff"), log, 1), null);
 });
+
+import { statusReport } from "../hooks/state-line.mjs";
+
+const STATE = `---
+gsd_state_version: 1.0
+status: executing
+stopped_at: Finished plan 02 of phase 4. Next is the verification pass.
+current_phase: 4
+current_phase_name: Billing
+progress:
+  total_phases: 7
+  completed_phases: 3
+  total_plans: 20
+  completed_plans: 11
+---
+body`;
+
+test("statusReport: full report with handoff lists", () => {
+  const handoff = JSON.stringify({
+    timestamp: "2026-10-01T12:00:00Z",
+    next_action: "Run /gsd-verify-work 4 to check the billing flow.",
+    blockers: ["Stripe key missing", { description: "CI red on main" }],
+    human_actions_pending: "Approve the schema change",
+    remaining_tasks: ["a", "b", "c", "d", "e", "f", "g"],
+    uncommitted_files: ["x.js"],
+  });
+  const r = statusReport(STATE, handoff, NOW, "⚠ ~9 commits since STATE.md");
+  assert.equal(r.isGsd, true);
+  for (const want of [
+    "Now: phase 4 · Billing (executing)", "Progress: 3/7 phases · 11/20 plans", "Stopped at: Finished plan 02 of phase 4",
+    "⚠ ~9 commits since STATE.md", "(written 2d ago)", "Command: /gsd-verify-work 4",
+    "Blockers (2)", "  - CI red on main", "Needs a person (1)", "Remaining tasks (7)", "… and 2 more", "Uncommitted at pause: 1 file",
+  ]) assert.ok(r.text.includes(want), want + "\n" + r.text);
+});
+
+test("statusReport: not a GSD project, no handoff, bad handoff", () => {
+  assert.equal(statusReport(null, null, NOW).isGsd, false);
+  assert.equal(statusReport("---\nstatus: x\n---", null, NOW).isGsd, false);
+  assert.match(statusReport(STATE, null, NOW).text, /No HANDOFF\.json/);
+  assert.match(statusReport(STATE, "{oops", NOW).text, /not valid JSON/);
+});
+
+test("statusReport: tolerates a sparse STATE.md and odd list shapes", () => {
+  const r = statusReport("---\ngsd_state_version: 1.0\n---", JSON.stringify({ blockers: [null, 3, {}], next_action: "" }), NOW);
+  assert.equal(r.isGsd, true);
+  assert.ok(!r.text.includes("Next:"));
+});

@@ -1,5 +1,5 @@
 // Pure: STATE.md text -> one-line summary. No $ access, so it is testable under plain Node.
-function frontmatter(text) {
+export function frontmatter(text) {
   const m = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
   if (!m) return null;
   const out = {};
@@ -109,4 +109,68 @@ export function driftNote(stateText, reflogText, threshold = 5) {
   if (!fm || !fm.gsd_state_version || !fm.state_head) return null;
   const n = commitsSince(reflogText, fm.state_head);
   return n != null && n >= threshold ? `⚠ ~${n} commits since STATE.md` : null;
+}
+
+// Free-form lists in HANDOFF.json (blockers, human_actions_pending, remaining_tasks) come as strings or as objects
+// with some text field. Show each as one line of text; anything unreadable is skipped rather than guessed at.
+export function items(v) {
+  if (v == null || v === "") return [];
+  const list = Array.isArray(v) ? v : [v];
+  return list
+    .map((x) => (typeof x === "string" ? x : x && typeof x === "object" ? (x.description ?? x.text ?? x.title ?? x.task ?? x.name ?? "") : String(x)))
+    .map((s) => summarize(s, 110))
+    .filter(Boolean);
+}
+
+function listBlock(label, v, show = 5) {
+  const all = items(v);
+  if (!all.length) return [];
+  const out = [`${label} (${all.length})`, ...all.slice(0, show).map((s) => "  - " + s)];
+  if (all.length > show) out.push(`  … and ${all.length - show} more`);
+  return out;
+}
+
+// The full resume report for the /gsd-status command: everything the band and hint compress, in plain lines.
+// Pure. stateText may be null (no STATE.md), handoffText may be null (no HANDOFF.json), driftText is driftNote's output.
+// Returns { text, isGsd }: isGsd is false when there is no GSD STATE.md here, and text then says so.
+export function statusReport(stateText, handoffText, now = Date.now(), drift = null) {
+  const fm = stateText == null ? null : frontmatter(stateText);
+  if (!fm || !fm.gsd_state_version) {
+    return { isGsd: false, text: "No GSD project here: .planning/STATE.md is missing or has no gsd_state_version." };
+  }
+  const out = ["GSD status"];
+  const phase = [fm.current_phase && `phase ${fm.current_phase}`, fm.current_phase_name].filter(Boolean).join(" · ");
+  if (phase) out.push("Now: " + phase + (fm.status ? ` (${fm.status})` : ""));
+  else if (fm.status) out.push("Status: " + fm.status);
+  const p = fm.progress;
+  if (p) {
+    const bits = [];
+    if (p.total_phases) bits.push(`${p.completed_phases ?? 0}/${p.total_phases} phases`);
+    if (p.total_plans) bits.push(`${p.completed_plans ?? 0}/${p.total_plans} plans`);
+    if (bits.length) out.push("Progress: " + bits.join(" · "));
+  }
+  if (fm.stopped_at) out.push("Stopped at: " + summarize(fm.stopped_at, 220));
+  if (drift) out.push(drift);
+
+  let j = null;
+  try { j = handoffText == null ? null : JSON.parse(handoffText); } catch { /* unreadable handoff: say so below */ }
+  if (handoffText != null && !j) out.push("", "HANDOFF.json is present but is not valid JSON.");
+  if (j && typeof j === "object") {
+    const t = j.timestamp ? Date.parse(j.timestamp) : NaN;
+    const age = !Number.isNaN(t) && now >= t ? ` (written ${ago(now - t)})` : "";
+    out.push("", "Handoff" + age);
+    if (typeof j.next_action === "string" && j.next_action.trim()) {
+      out.push("Next: " + summarize(j.next_action, 260));
+      const cmd = nextCommand(summarize(j.next_action, 90));
+      if (cmd) out.push("Command: " + cmd);
+    }
+    out.push(...listBlock("Blockers", j.blockers));
+    out.push(...listBlock("Needs a person", j.human_actions_pending));
+    out.push(...listBlock("Remaining tasks", j.remaining_tasks));
+    const files = items(j.uncommitted_files);
+    if (files.length) out.push(`Uncommitted at pause: ${files.length} file${files.length === 1 ? "" : "s"}`);
+  } else if (handoffText == null) {
+    out.push("", "No HANDOFF.json (nothing was paused with /gsd-pause-work).");
+  }
+  return { isGsd: true, text: out.join("\n") };
 }

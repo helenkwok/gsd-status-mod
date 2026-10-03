@@ -1,7 +1,7 @@
 # gsd-status-mod
 
-A Claude Code **mod** (needs Claude Code 2.1.287+) for a GSD project. It adds three things, each showing what the
-GSD statusline does not:
+A Claude Code **mod** (needs Claude Code 2.1.287+) for a GSD project. It adds a live pane and four smaller things, each
+showing what the GSD statusline does not:
 
     GSD · stopped: PAUSED 2026-09-09 after the schema review · 9/14 phases  ⚠ ~124 commits since STATE.md   <- above the prompt
     ❯ /gsd-execute-phase 2                                                                                          <- dim suggestion, Tab to take
@@ -22,12 +22,32 @@ GSD statusline does not:
   matches the hint beside it. Prose-only actions (`Nothing is pending`) and actions that say to go elsewhere (`Open a
   session in ~/other-project and run ...`) get no suggestion. Tab only fills the box; nothing runs until you press Enter.
   The engine proposes its own suggestion after each turn, so ours shows at session start only.
+- **`/gsd-status` command**: the full resume report on demand, read fresh from disk, with no terminal-height limit.
+  Phase and status, phase and plan progress, the whole `stopped_at`, the drift warning, and from `HANDOFF.json` the
+  next action and its command, blockers, `human_actions_pending` ("Needs a person"), remaining tasks and how many files
+  were uncommitted at pause. In a project that is not GSD it says so.
 
-Everything follows a `.planning` symlink, draws nothing when there is nothing to show, and refreshes at session start
-and after each turn, not mid-turn.
+- **Live pane** (docked on the right of a wide terminal, 144+ columns; `/gsd-board` opens or closes it, and the
+  `openOnStart` option turns the auto-open off). Bordered boxes that update as events happen, not only per turn:
+  - *main*: context gauge, session cost, 5h and 7d limits, blockers and people-needed from the handoff.
+  - *roadmap*: the phase checklist from `ROADMAP.md` with the current phase marked. The current phase comes from
+    `STATE.md` (its `current_phase`, or the label that starts `current_phase_name`); it is never guessed, so a project
+    whose state names no phase shows the list with no marker. Only `- [x] **Phase N: name**` lines are read.
+  - *agents*: a tree of running and finished agents, with forks (`⑂`) and sub-agents under their parent, and a live
+    clock. Finished agents fold away while others run.
+  - *last turn / turn*, *work streams* (counts and newest of phases, spikes, threads, todos, seeds, notes) and a
+    *session log* of prompts, spawns, errors and new commits.
 
-It deliberately does not show plan usage (5-hour / weekly limits): several mods already do, for example
-`quota-meter` and `limit-watch`.
+  Everything with a `▸` is clickable. With the pane focused (`ctrl+x`, then `Tab`) hotkeys work too: `1`-`6` agent rows,
+  `b` blockers, `r` roadmap, `f` finished agents, `l` log. The pane is read-only. The cost is whatever Claude Code
+  reports for the session, shown as is; it is an estimate, not a bill. The band above the prompt is hidden while the
+  pane is open, so the same line is not drawn twice.
+
+Everything follows a `.planning` symlink and draws nothing when there is nothing to show. The band and hint refresh at
+session start and after each turn; the pane also refreshes on tool calls and agent events.
+
+The band does not show plan usage (5-hour / weekly limits), since `quota-meter` and `limit-watch` already do; the pane's
+main box does show them, for the one-glance view.
 
 ## Screenshots
 
@@ -53,7 +73,7 @@ Claude Code's own `Try "…"` text.
 ## What it can touch (reach)
 
 Only `$.fs.read` (`.planning/STATE.md`, `.planning/HANDOFF.json`, and the git reflog `.git/logs/HEAD`, or the worktree's
-git dir named in a `.git` file), `$.clock.now`, `$.ui.invalidate`, `$.ui.resolve` and `$.prompt.suggest` (a dim suggestion
+git dir named in a `.git` file), `$.clock.now`, `$.ui.invalidate`, `$.ui.resolve`, `$.command.register` (the read-only `/gsd-status` command, which only returns text) and `$.prompt.suggest` (a dim suggestion
 in the empty prompt box: it cannot send anything). It does not hook
 tool calls, prompts, permissions or compaction, writes no files, runs no processes and makes no network calls. Check it
 yourself: `claude plugin validate .` prints the `$` calls the module makes.

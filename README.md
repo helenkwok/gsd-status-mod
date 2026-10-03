@@ -44,7 +44,7 @@ showing what the GSD statusline does not:
   pane is open, so the same line is not drawn twice.
 
 **Workstream mode.** When `.planning/STATE.md` is missing but `.planning/workstreams/<name>/STATE.md` exists, the pane reads
-that workstream's `STATE.md`, `ROADMAP.md` and work streams (and its `HANDOFF.json`, else the top-level one). GSD's own
+that workstream's `STATE.md`, `ROADMAP.md` and work streams, plus the project-wide folders left at `.planning/` (threads, spikes, seeds...), merged into the same counts (and its `HANDOFF.json`, else the top-level one). GSD's own
 choice of active workstream is per session and a mod cannot see it, so the plugin uses the name in
 `.planning/active-workstream` if there is one, else the workstream whose `STATE.md` changed most recently. With more than
 one, a `w: ⇄ workstream …` button (click, or `w`) switches to the next. The workstream name shows in the header.

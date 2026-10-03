@@ -118,7 +118,10 @@ async function readAgents($, now) {
 async function readStreams($) {
   const out = [];
   for (const name of STREAMS) {
-    const info = streamInfo(await $.fs.list(at(plan(name))).catch(() => []));
+    // In workstream mode the project-wide folders (threads, spikes, seeds...) stay at .planning/, beside the workstream's own.
+    const here = await $.fs.list(at(plan(name))).catch(() => []);
+    const top = wsBase ? await $.fs.list(at(`.planning/${name}`)).catch(() => []) : [];
+    const info = streamInfo([...here, ...top]);
     if (info) out.push({ name, ...info });
   }
   return out;

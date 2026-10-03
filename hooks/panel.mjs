@@ -46,7 +46,7 @@ export function streamInfo(entries) {
     ? [...kept].sort((a, b) => b.mtimeMs - a.mtimeMs)
     : [...kept].sort((a, b) => b.name.localeCompare(a.name, undefined, { numeric: true }));
   const names = byNewest.map((e) => e.name.replace(/\.md$/, ""));
-  return { count: kept.length, newest: names[0], recent: names.slice(0, 5) };
+  return { count: kept.length, newest: names[0], recent: names.slice(0, 5), ...(kept.some((e) => e.from) ? { paths: byNewest.slice(0, 5).map((e) => `${e.from}/${e.name}`) } : {}) };
 }
 
 // A file path for the log: from ".planning/" on when it is under it, else the last two parts.
@@ -130,7 +130,57 @@ function currentIndex(phases, fm) {
   return -1;
 }
 
+// --- the markdown reader's pure parts
+
+// The YAML block at the top of a GSD file: the dashboard already shows STATE's fields, so the reader hides it.
+export const stripFrontmatter = (t) => String(t ?? "").replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "");
+
+// Pages of at most `max` characters (the Markdown element draws at most 10000), cut at a line, never inside a code fence.
+// ponytail: a single fenced block over 9500 characters is cut mid-fence, so show it raw if that ever matters.
+export function pages(text, max = 8000) {
+  const out = [];
+  let cur = "", fence = false;
+  for (const line of String(text ?? "").replace(/\r\n/g, "\n").split("\n")) {
+    if (cur.length + line.length + 1 > max && cur.trim() && (!fence || cur.length > 9500)) { out.push(cur.trimEnd()); cur = ""; }
+    cur += line + "\n";
+    if (/^\s*(```|~~~)/.test(line)) fence = !fence;
+  }
+  if (cur.trim()) out.push(cur.trimEnd());
+  return out.length ? out : [""];
+}
+
+// GSD files are full of task lists; the renderer draws "[x]" literally, so give them glyphs.
+const tick = (t) => t.replace(/^(\s*[-*] )\[( |x|X)\] /gm, (_, lead, c) => `${lead}${c === " " ? "○" : "✓"} `);
+
+// One folder of .planning for the browser: sub-folders first, then the .md files, numbers in order (phase 2 before 10).
+export function browseList(entries) {
+  const isDir = (e) => e.kind === "dir" || (e.isLink && e.kind !== "file");
+  return (entries ?? [])
+    .filter((e) => !e.name.startsWith(".") && (isDir(e) || /\.md$/i.test(e.name)))
+    .map((e) => ({ name: e.name, dir: isDir(e) }))
+    .sort((a, b) => b.dir - a.dir || a.name.localeCompare(b.name, undefined, { numeric: true }));
+}
+
+// The reader view: replaces the dashboard. rd: { path, isFile, entries?, text? }. A line is a button or { md }.
+function readerModel(rd, header, inner) {
+  const crumb = String(rd.path).replace(/^\.planning\/?/, "") || ".planning";
+  const lines = [{ button: { key: "reader:up", label: rd.path === ".planning" ? "‹ back to the dashboard" : "‹ back", color: C.dim, hotkey: "b" } }];
+  let right = null;
+  if (rd.isFile) {
+    // The engine refuses the WHOLE pane if one Markdown block passes 10000 characters, so a block is cut at 9900 as a last resort.
+    for (const chunk of pages(tick(stripFrontmatter(rd.text)))) lines.push({ md: chunk.slice(0, 9900) });
+  } else {
+    const list = browseList(rd.entries);
+    if (!list.length) lines.push([["no markdown here", C.dim]]);
+    for (const e of list.slice(0, 40)) lines.push({ button: { key: `reader:open:${e.name}`, label: `${e.dir ? "▸" : " "} ${e.name}${e.dir ? "/" : ""}`, color: e.dir ? C.arch : null } });
+    if (list.length > 40) lines.push([[`+${list.length - 40} more`, C.dim]]);
+    right = [[`${list.length}`, C.dim]];
+  }
+  return { header, panels: [{ id: "reader", color: C.arch, title: [[cut(crumb, inner - 8), C.arch, "b"]], right, lines }] };
+}
+
 // in: {
+//   reader: { path, isFile, entries, text } | null,   // the markdown reader, when open
 //   roadmap: ROADMAP.md text | null,
 //   state: STATE.md text | null,
 //   usage: { pct, tokens, window, costUsd, limits: [{kind, pct}] } | null,
@@ -154,6 +204,8 @@ export function panelModel(inp, width = 62) {
   const phase = fm.current_phase ? `phase ${fm.current_phase}${fm.current_phase_name ? " " + fm.current_phase_name : ""}` : fm.milestone ?? "";
   const ws = inp.workstream ?? null;
   const header = [["GSD", C.main, "b"], ...(ws ? [[" · ", C.dim], [cut(ws.name, 24), C.amber]] : []), ...(phase ? [[" · ", C.dim], [cut(phase, w - 22), null, "b"]] : []), ...(fm.status ? [[` · ${fm.status}`, C.dim]] : [])];
+
+  if (inp.reader) return readerModel(inp.reader, header, inner);
 
   // main: the session's vitals, and anything that needs a person
   const main = [];
@@ -184,6 +236,7 @@ export function panelModel(inp, width = 62) {
       for (const t of items(h.human_actions_pending)) main.push([["  - ", C.amber], [cut(t, inner - 4), null]]);
     }
   }
+  main.push({ button: { key: "reader:browse", label: "▸ read .planning", color: C.arch, hotkey: "o" } });
   if (fm.last_activity_desc && !(u && u.pct != null)) main.push([[cut(summarize(fm.last_activity_desc, inner), inner), C.dim]]);
   panels.push({
     id: "main", color: C.main,
@@ -272,7 +325,7 @@ export function panelModel(inp, width = 62) {
     for (const st of inp.streams) {
       const open = ex.streams?.has?.(st.name);
       lines.push({ toggle: { key: `stream:${st.name}`, open }, segs: [[st.name.padEnd(8), C.dim], [String(st.count).padStart(4) + "  ", null, "b"], [cut(st.newest, inner - 16), C.dim]] });
-      if (open) for (const n of (st.recent ?? [st.newest]).slice(0, 5)) lines.push([["      ", null], [cut(n, inner - 8), C.dim]]);
+      if (open) (st.recent ?? [st.newest]).slice(0, 5).forEach((n, i) => lines.push(st.paths?.[i] ? { button: { key: `reader:open-path:${st.paths[i]}`, label: `    ${cut(n, inner - 8)}`, color: C.dim } } : [["      ", null], [cut(n, inner - 8), C.dim]]));
     }
     panels.push({ id: "streams", color: C.arch, title: [["work streams", C.arch, "b"]], right: null, lines });
   }

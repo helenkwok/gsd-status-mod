@@ -16,6 +16,7 @@ const seen = new Map(); // agent id -> { since, status, endedAt }: when this mod
 const forks = new Set(); // ids of agents started as forks of their parent (only the spawn event says so)
 const PANE = "gsd-board";
 // What the person has opened in the pane by clicking (or pressing a hotkey): agent rows, finished agents, blockers, streams, log.
+let reader = null; // the markdown reader: { path, isFile, entries | text }, or null for the dashboard
 const expand = { agents: new Set(), roadmap: false, finished: false, blockers: false, streams: new Set(), log: false };
 const PANE_SIZE = { columns: 64, rows: 16 };
 const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
@@ -121,7 +122,7 @@ async function readStreams($) {
     // In workstream mode the project-wide folders (threads, spikes, seeds...) stay at .planning/, beside the workstream's own.
     const here = await $.fs.list(at(plan(name))).catch(() => []);
     const top = wsBase ? await $.fs.list(at(`.planning/${name}`)).catch(() => []) : [];
-    const info = streamInfo([...here, ...top]);
+    const info = streamInfo([...here.map((e) => ({ ...e, from: plan(name) })), ...top.map((e) => ({ ...e, from: `.planning/${name}` }))]);
     if (info) out.push({ name, ...info });
   }
   return out;
@@ -193,6 +194,49 @@ async function tick($) {
   const now = await $.clock.now();
   if (now - lastRefreshAt >= 5000) await refresh($, false).catch(() => {});
   else $.ui.invalidate("ui.render");
+}
+
+// The reader opens a folder listing or one file; path is a ".planning/..." path, so it can never leave .planning.
+async function openReader($, path) {
+  const parts = String(path).split("/").filter((x) => x && x !== ".");
+  if (parts[0] !== ".planning" || parts.includes("..")) return;
+  const p = parts.join("/");
+  const entries = await $.fs.list(at(p)).catch(() => null);
+  if (entries) reader = { path: p, isFile: false, entries };
+  else {
+    const text = await read($, p);
+    if (text == null) return;
+    reader = { path: p, isFile: true, text };
+  }
+  $.ui.invalidate("ui.render");
+}
+
+// A link inside the open file -> the .planning path it points at, or null (not a relative .md link, or outside .planning).
+// It lives here, not in panel.mjs: a press handler runs where only this file's own functions are visible, not imported names.
+export function resolveLink(from, href) {
+  const h = String(href ?? "").split("#")[0];
+  if (!h || h.startsWith("/") || /^[a-z][a-z0-9+.-]*:/i.test(h) || !/\.md$/i.test(h)) return null;
+  const parts = String(from).split("/").slice(0, -1);
+  for (const seg of h.split("/")) { if (seg === "..") parts.pop(); else if (seg && seg !== ".") parts.push(seg); }
+  return parts[0] === ".planning" ? parts.join("/") : null;
+}
+
+// A click on a link in the open file: a relative .md link opens in the reader; anything else is left alone.
+async function linkPress($, href) {
+  const t = reader && resolveLink(reader.path, href);
+  if (t) await openReader($, t);
+}
+
+async function readerPress($, key) {
+  const [, kind, arg] = /^reader:([^:]+):?(.*)$/s.exec(key) ?? [];
+  if (kind === "browse") return openReader($, ".planning");
+  if (kind === "open-path") return openReader($, arg);
+  if (!reader) return;
+  if (kind === "open") return openReader($, `${reader.path}/${arg}`);
+  if (kind === "up") {
+    if (!reader.isFile && reader.path === ".planning") { reader = null; $.ui.invalidate("ui.render"); return; }
+    return openReader($, reader.path.split("/").slice(0, -1).join("/"));
+  }
 }
 
 async function openPane($) {
@@ -291,13 +335,19 @@ export function register(on, options) {
 
   // The pane: a bordered box per topic, the way the engine's own panes are drawn.
   on("ui.render", { component: "Pane", requestId: PANE }, async ($, e) => {
-    const { Box, Text, Button } = $.ui.resolve(e);
+    const { Box, Text, Button, Markdown } = $.ui.resolve(e);
     if (!isGsd) return Text({ dimColor: true, children: "No GSD project here." });
     const W = Math.max(40, e.props.bodyColumns);
     const segs = (list) => list.map(([text, color, flags]) => Text({ ...(color ? { color } : {}), ...(flags === "b" ? { bold: true } : {}), children: text }));
-    const press = (key) => () => { flip(key); if (key === "ws") void refresh($); else $.ui.invalidate("ui.render"); };
+    const press = (key) => () => {
+      if (key.startsWith("reader:")) return void readerPress($, key);
+      flip(key);
+      if (key === "ws") void refresh($); else $.ui.invalidate("ui.render");
+    };
+    const link = (k) => void linkPress($, k.href);
     // A line is plain text, a row with a ▸/▾ button in front, or one whole-line button.
-    const line = (l) => {
+    const line = (l, i) => {
+      if (l.md !== undefined) return Markdown({ key: `md${i}`, text: l.md, onLinkPress: link });
       if (Array.isArray(l)) return Text({ wrap: "truncate", children: segs(l) });
       if (l.toggle) {
         return Box({ flexDirection: "row", children: [
@@ -308,7 +358,7 @@ export function register(on, options) {
       }
       return Button({ key: l.button.key, label: l.button.label, plain: true, hotkey: l.button.hotkey, onPress: press(l.button.key) });
     };
-    const m = panelModel({ ...live, expand, now: await $.clock.now() }, W);
+    const m = panelModel({ ...live, reader, expand, now: await $.clock.now() }, W);
     return Box({
       flexDirection: "column", width: W,
       children: [

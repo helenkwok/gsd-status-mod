@@ -190,3 +190,32 @@ test("workstream: named in the header, with a switch button only when there are 
   const one = panelModel({ state, workstream: { name: "emsd", index: 1, total: 1, names: ["emsd"] }, now: 0 }, 62);
   assert.ok(!one.panels[0].lines.some((l) => l.button?.key === "ws"));
 });
+
+test("reader: pages cut at a line and not inside a fence; frontmatter hidden; browser lists folders first", async () => {
+  const { pages, stripFrontmatter, browseList, panelModel } = await import("../hooks/panel.mjs");
+  assert.equal(stripFrontmatter("---\nstatus: x\n---\n# Title\nbody"), "# Title\nbody");
+  assert.equal(stripFrontmatter("no header"), "no header");
+  const body = Array.from({ length: 60 }, (_, i) => `line ${i} ${"x".repeat(40)}`).join("\n");
+  const p = pages(body, 500);
+  assert.ok(p.length > 3 && p.every((x) => x.length <= 560));
+  assert.equal(p.join("\n"), body);
+  const fenced = "```\n" + Array.from({ length: 40 }, () => "y".repeat(40)).join("\n") + "\n```\nafter";
+  assert.ok(pages(fenced, 500)[0].endsWith("```")); // a fence is kept whole, the cut comes after it
+  assert.deepEqual(pages(""), [""]);
+  const e = (name, kind) => ({ name, kind });
+  assert.deepEqual(browseList([e("10-x", "dir"), e("NOTES.md", "file"), e("2-y", "dir"), e("a.json", "file"), e(".hid", "dir")]).map((x) => x.name), ["2-y", "10-x", "NOTES.md"]);
+  const dir = panelModel({ reader: { path: ".planning/phases", isFile: false, entries: [e("04-billing", "dir")] } }, 62);
+  assert.equal(dir.panels.length, 1);
+  assert.ok(dir.panels[0].lines.some((l) => l.button?.key === "reader:open:04-billing"));
+  const file = panelModel({ reader: { path: ".planning/ROADMAP.md", isFile: true, text: "---\na: b\n---\n# Hi\n- [x] done\n- [ ] todo" } }, 62);
+  assert.ok(file.panels[0].lines.some((l) => l.md === "# Hi\n- ✓ done\n- ○ todo"));
+  const huge = panelModel({ reader: { path: ".planning/x.md", isFile: true, text: "z".repeat(30000) } }, 62);
+  assert.ok(huge.panels[0].lines.filter((l) => l.md !== undefined).every((l) => l.md.length <= 9900));
+  const { resolveLink } = await import("../hooks/gsd-status.mjs");
+  assert.equal(resolveLink(".planning/phases/04-x/04-01-PLAN.md", "./04-02-PLAN.md"), ".planning/phases/04-x/04-02-PLAN.md");
+  assert.equal(resolveLink(".planning/phases/04-x/a.md", "../../ROADMAP.md#top"), ".planning/ROADMAP.md");
+  assert.equal(resolveLink(".planning/a.md", "../../etc/x.md"), null);
+  assert.equal(resolveLink(".planning/a.md", "https://x.dev/a.md"), null);
+  assert.equal(resolveLink(".planning/a.md", "/abs.md"), null);
+  assert.equal(resolveLink(".planning/a.md", "img.png"), null);
+});

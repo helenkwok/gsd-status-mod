@@ -60,7 +60,8 @@ It is a Claude Code **mod**. It adds a live pane and four smaller things, each s
     `.planning`, one folder at a time (so any depth), and then for the file itself, drawn by Claude Code's own `Markdown`
     element: the same typography as a reply, at the pane's width, scrolled with the wheel or `PageDown`/`End`. The YAML
     header is hidden, `- [x]` shows as `✓` and `- [ ]` as `○`, and a relative link to another `.md` file under `.planning`
-    opens it. `b` goes back one level, and `d: ⌂ dashboard` returns to the dashboard from any depth, and `t: ↑ back to top` ends every file. Only `.planning` is readable.
+    opens it. A path opens only if its real location, symlinks followed, is still under `.planning`'s own, so a symlink inside
+    `.planning` cannot lead the reader elsewhere. `b` goes back one level, and `d: ⌂ dashboard` returns to the dashboard from any depth, and `t: ↑ back to top` ends every file. Only `.planning` is readable.
   - *last turn / turn*, *work streams* (counts and newest of phases, spikes, threads, todos, seeds, notes) and a
     *session log* of prompts, spawns, errors and new commits.
 

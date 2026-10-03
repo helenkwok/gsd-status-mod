@@ -189,3 +189,10 @@ test("pickWorkstream: the person's pick, else the marker, else the most recently
   assert.equal(pickWorkstream(c, "gone", "gone").name, "nrb2");
   assert.equal(pickWorkstream([c[0]], "", "").total, 1);
 });
+
+test("commitsSince ignores a state_head too short to be a hash", () => {
+  const log = "0000 aaaaaaaaaaaa1111 Name <e> 1 +0000\tcommit: one\naaaa bbbbbbbbbbbb2222 Name <e> 2 +0000\tcommit: two\n";
+  assert.equal(commitsSince(log, "a"), null);
+  assert.equal(commitsSince(log, "aaaaaa"), null);
+  assert.notEqual(commitsSince(log, "aaaaaaaaaaaa1111"), null);
+});

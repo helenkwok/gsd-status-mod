@@ -243,10 +243,20 @@ async function tick($) {
 }
 
 // The reader opens a folder listing or one file; path is a ".planning/..." path, so it can never leave .planning.
+// A symlink inside .planning may point anywhere, so the reader opens a path only if its real location is still under
+// .planning's own real location (.planning itself is often a symlink to the external store).
+async function insidePlanning($, p) {
+  const norm = (s) => String(s ?? "").replace(/\\/g, "/");
+  const [base, target] = await Promise.all([".planning", p].map((x) => $.fs.stat(at(x), { resolve: true }).catch(() => null)));
+  const b = norm(base?.realPath), r = norm(target?.realPath);
+  return Boolean(b && r && (r === b || r.startsWith(b + "/")));
+}
+
 async function openReader($, path) {
   const parts = String(path).split("/").filter((x) => x && x !== ".");
   if (parts[0] !== ".planning" || parts.includes("..")) return;
   const p = parts.join("/");
+  if (!(await insidePlanning($, p))) return;
   const entries = await $.fs.list(at(p)).catch(() => null);
   if (entries) reader = { path: p, isFile: false, entries };
   else {

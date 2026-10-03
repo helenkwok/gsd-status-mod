@@ -90,7 +90,7 @@ export function handoffLine(jsonText, now = Date.now(), max = 90) {
 // Commits made after the one STATE.md was written at, counted from the git reflog text (.git/logs/HEAD),
 // so no git process is needed. null when the reflog does not contain that commit (pruned, rebased, other clone).
 export function commitsSince(reflogText, stateHead) {
-  if (!stateHead) return null;
+  if (!stateHead || String(stateHead).length < 7) return null; // a short prefix would match unrelated reflog rows
   const rows = reflogText.split(/\r?\n/).filter(Boolean).map((l) => {
     const [head, msg = ""] = l.split("\t");
     const [, now] = head.split(" ");

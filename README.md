@@ -29,6 +29,27 @@ and after each turn, not mid-turn.
 It deliberately does not show plan usage (5-hour / weekly limits): several mods already do, for example
 `quota-meter` and `limit-watch`.
 
+## Screenshots
+
+All three are from a made-up demo project (`acme-portal`), in a terminal at least 16 rows tall. The `◐ medium · /effort`
+row, the `Sonnet 5.5 │ v1.0 · paused │ acme-portal` statusline and the `auto mode on` text are Claude Code's and the
+GSD statusline's own; what this plugin adds is the cyan and yellow line above the prompt, the dim text in the prompt
+box, and `· next: … · handoff 2d ago` at the end of the last row.
+
+**A handoff that names a command.** The `GSD ·` line, the drift warning (`~8 commits since STATE.md`), the dim
+suggestion in the prompt box (Tab to take it), and the same command in the `next:` hint beside it.
+
+![Handoff naming a command: GSD line with drift warning, /gsd-execute-phase 4 suggested in the prompt, next: hint on the last row](docs/screenshots/handoff-with-command.png)
+
+**A handoff that names no command.** The hint still shows the next action, but no suggestion is made, so the prompt box keeps
+Claude Code's own `Try "…"` text.
+
+![Handoff with prose only: next: Nothing is pending, and the prompt box keeps its own placeholder](docs/screenshots/handoff-prose-only.png)
+
+**Not a GSD project.** A `.planning/STATE.md` without `gsd_state_version` is ignored: nothing is added.
+
+![A folder with a lookalike STATE.md: nothing from the plugin](docs/screenshots/not-a-gsd-project.png)
+
 ## What it can touch (reach)
 
 Only `$.fs.read` (`.planning/STATE.md`, `.planning/HANDOFF.json`, and the git reflog `.git/logs/HEAD`, or the worktree's
@@ -55,6 +76,9 @@ such a mod loads before this one, its band is the only one shown, and that is th
 Check it: `claude plugin validate .` and `node --test tests/state-line.test.mjs`.
 
 ## Not handled yet
+
+The band above the prompt is not drawn in a very short terminal window: it appeared at 16 rows and above and not at 13 (the
+engine drops it). The hint tail and the suggestion are unaffected.
 
 Workstream-mode `STATE.md`, walking up from a subdirectory, and Windows (untested). Background:
 open-gsd/gsd-core#5174 (a maintainer asked to revisit in-tree support in November 2026; this plugin is the out-of-tree route).

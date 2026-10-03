@@ -70,10 +70,15 @@ such a mod loads before this one, its band is the only one shown, and that is th
 
 ## Try it
 
-    cd <a GSD project>        # start from the project root: it reads .planning/STATE.md relative to the cwd
-    claude --plugin-dir /path/to/gsd-status-mod
+Needs Claude Code 2.1.287 or later (`claude --version`) and Node 20+ only if you want to run the tests. There is nothing to
+build or install: the plugin is loaded from its folder for one session.
 
-Check it: `claude plugin validate .` and `node --test tests/state-line.test.mjs`.
+    git clone https://github.com/helenkwok/gsd-status-mod ~/gsd-status-mod
+    cd <a GSD project>        # start from the project root: it reads .planning/STATE.md relative to the cwd
+    claude --plugin-dir ~/gsd-status-mod
+
+To check the plugin itself: `cd ~/gsd-status-mod`, then `claude plugin validate .` and
+`node --test tests/state-line.test.mjs`.
 
 ## Not handled yet
 

@@ -1,6 +1,6 @@
 import { frontmatter, isGsdState, resumeLine, handoffInfo, driftNote, statusReport, pickWorkstream } from "./state-line.mjs";
-import { addRun } from "./history.mjs";
-import { panelModel, streamInfo, commitCount, commitFeed, shortPath } from "./panel.mjs";
+import { addRun, typical, forecast, dur } from "./history.mjs";
+import { panelModel, streamInfo, commitCount, commitFeed, shortPath, planShape, clock } from "./panel.mjs";
 
 // The command named by the handoff's next_action (see nextCommand) is offered as a dim suggestion: Tab puts it in the
 // prompt box and nothing runs until the person presses Enter. No command named, no suggestion.
@@ -21,7 +21,14 @@ const forks = new Set(); // ids of agents started as forks of their parent (only
 const PANE = "gsd-board";
 // What the person has opened in the pane by clicking (or pressing a hotkey): agent rows, finished agents, blockers, streams, log.
 let reader = null; // the markdown reader: { path, isFile, entries | text }, or null for the dashboard
-const expand = { agents: new Set(), roadmap: false, pace: false, trends: false, finished: false, blockers: false, streams: new Set(), log: false };
+const expand = { agents: new Set(), roadmap: false, pace: false, trends: false, timeline: false, toc: false, finished: false, blockers: false, streams: new Set(), log: false };
+let toasts = true; // short notices (an agent far over its usual time, a phase that will not fit the window, drift)
+const told = new Set(); // agent ids already toasted about
+let lastLevel; // how the phase fit the 5-hour window at the last look: undefined (not yet seen), null, "amber" or "warn"
+let lastDrift; // the drift note at the last look
+let cluster = null; // the agents that overlapped, for measuring quota: { p0, r0, ids, ok }; it closes when none is running
+const qOf = new Map(); // agent id -> { q, n } once its cluster has closed
+const runOf = new Map(); // agent id -> its row in `hist`, so a quota measured after the row was written can be filled in
 const PANE_SIZE = { columns: 64, rows: 16 };
 const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
 const STREAMS = ["phases", "spikes", "threads", "quick", "todos", "seeds", "notes"];
@@ -99,7 +106,55 @@ async function readUsage($) {
   const u = await $.session.usage().catch(() => null);
   if (!u) return null;
   return { pct: u.context?.percent ?? null, tokens: u.context?.tokens ?? null, window: u.context?.window ?? null, costUsd: u.cost?.usd ?? null,
-    limits: (u.rateLimits ?? []).map((r) => ({ kind: r.kind, pct: r.percentUsed })) };
+    limits: (u.rateLimits ?? []).map((r) => ({ kind: r.kind, pct: r.percentUsed, resetsAt: r.resetsAt })) };
+}
+
+const five = (u) => (u?.limits ?? []).find((l) => /five|5h/i.test(l.kind) && Number.isFinite(l.pct)) ?? null;
+
+// Quota per executor, measured over the stretch in which executors overlapped: how far the 5-hour window rose, divided by how many
+// ran. One executor alone and a wave of three both give a per-executor figure. Anything but executors in the stretch (or a window
+// reset, or no window) and it is not measured. ponytail: the main conversation and other sessions add to the rise too, so the
+// figure is shown as a range once enough runs agree; per-agent token weighting would need the usage of each run's own rows.
+async function trackCluster($, agents) {
+  const running = agents.filter((a) => a.status === "running" && a.type);
+  if (running.length && !cluster) {
+    const f = five(live.usage);
+    cluster = { p0: f?.pct ?? null, r0: f?.resetsAt ?? null, ids: new Set(), ok: f != null };
+    qOf.clear(); runOf.clear();
+  }
+  if (cluster) for (const a of running) { cluster.ids.add(a.id); if (String(a.type).replace(/^gsd-/, "") !== "executor") cluster.ok = false; }
+  if (running.length || !cluster) return;
+  const f = five(live.usage), n = cluster.ids.size;
+  const q = cluster.ok && n && f && f.resetsAt === cluster.r0 && f.pct >= cluster.p0 ? Math.round(((f.pct - cluster.p0) / n) * 100) / 100 : -1;
+  let patched = false;
+  for (const id of cluster.ids) {
+    qOf.set(id, { q, n });
+    const row = runOf.get(id);
+    if (row) { row[8] = q; row[9] = n; patched = true; }
+  }
+  cluster = null;
+  if (patched) await $.store.set(histKey(), { v: 1, runs: hist }).catch(() => {});
+}
+
+// Short notices, each said once: an agent more than twice its usual time, the phase's fit to the window getting worse, drift appearing.
+function toast($, text) {
+  if (toasts) void Promise.resolve($.ui.toast(String(text).slice(0, 200))).catch(() => {});
+}
+function alerts($, now) {
+  for (const a of live.agents) {
+    if (a.status !== "running" || !a.since || told.has(a.id)) continue;
+    const typ = typical(hist, a.type);
+    if (typ && now - a.since > 2 * typ && now - a.since > 60000) { told.add(a.id); toast($, `${String(a.type).replace(/^gsd-/, "")} has run ${clock(now - a.since)}, usually ${clock(typ)}`); }
+  }
+  const fc = forecast(planShape(live.plans), hist, live.agents, now, live.usage?.limits);
+  const level = fc?.level ?? null;
+  if (level && level !== lastLevel) {
+    toast($, fc.quota ? `${fc.open} plans left would take the 5h window to about ${Math.round(fc.quota.end)}%${level === "warn" ? ", it may run out" : ""}`
+      : `about ${dur(fc.ms)} of work left, the 5h window resets in ${dur(Math.max(0, fc.resetMs))}`);
+  }
+  lastLevel = level;
+  if (lastDrift !== undefined && rows.drift && !lastDrift) toast($, rows.drift);
+  lastDrift = rows.drift;
 }
 
 // Live agents, with when each was first seen and, as they finish, a line in the log.
@@ -155,8 +210,11 @@ async function recordRun($, e) {
   if (!a?.type || !(e.durationMs > 0)) return;
   const u = e.usage ?? {};
   const now = await $.clock.now(); // awaited first: agents that end together must not read `hist` before one another's update lands
-  hist = addRun(hist, [now, a.type, String(frontmatter(live.state)?.current_phase ?? ""), e.durationMs, steps.get(e.agentId) ?? 0,
-    (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0), u.output_tokens ?? 0, u.model ?? ""]);
+  const m = qOf.get(e.agentId); // the quota, when this agent's cluster closed before its row was written
+  const row = [now, a.type, String(frontmatter(live.state)?.current_phase ?? ""), e.durationMs, steps.get(e.agentId) ?? 0,
+    (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0), u.output_tokens ?? 0, u.model ?? "", m?.q ?? -1, m?.n ?? 0];
+  hist = addRun(hist, row);
+  runOf.set(e.agentId, row);
   steps.delete(e.agentId);
   await $.store.set(histKey(), { v: 1, runs: hist }).catch(() => {});
 }
@@ -206,7 +264,9 @@ async function refresh($, full = true) {
   live.handoff = parsed;
   live.usage = await readUsage($);
   live.agents = await readAgents($, now);
+  await trackCluster($, live.agents);
   if (full) { live.streams = await readStreams($); live.roadmap = await read($, plan("ROADMAP.md")); live.plans = await readPlans($, state); }
+  alerts($, now);
   $.ui.invalidate("ui.render"); // render output is cached until invalidated
 }
 
@@ -258,6 +318,7 @@ async function openReader($, path) {
   const p = parts.join("/");
   if (!(await insidePlanning($, p))) return;
   const entries = await $.fs.list(at(p)).catch(() => null);
+  expand.toc = false;
   if (entries) reader = { path: p, isFile: false, entries };
   else {
     const text = await read($, p);
@@ -283,12 +344,41 @@ async function linkPress($, href) {
   if (t) await openReader($, t);
 }
 
+// Brings the element with this key into view (null: the top), trying again while a pane that just changed is not drawn yet.
+async function scrollTo($, key) {
+  try {
+    await $.clock.sleep(120);
+    for (let n = 0; n < 8; n++) {
+      const r = await $.ui.scroll({ in: PANE, to: key ? { key } : "start", block: "start" }).catch((err) => ({ deny: String(err) }));
+      if (!r?.deny) return;
+      await $.clock.sleep(80);
+    }
+  } catch { /* the module reloaded: the pane stays where it is */ }
+}
+
+// A path inside this project's .planning -> ".planning/..." (what the reader opens), else null.
+// ponytail: a file read through the external store's own path (.planning is usually a symlink to it) gets no link.
+function planRel(file) {
+  const f = String(file ?? "").replace(/\\/g, "/"), base = String(planRoot || root).replace(/\\/g, "/");
+  return base && f.startsWith(`${base}/.planning/`) ? f.slice(base.length + 1) : null;
+}
+
+// A click on the "open in the GSD reader" line under a tool row in the transcript: show the pane and open that file.
+async function fromTranscript($, href) {
+  const rel = planRel(decodeURIComponent(String(href).replace(/^file:\/\//, "")));
+  if (!rel) return;
+  await openPane($).catch(() => {});
+  await openReader($, rel);
+}
+
 async function readerPress($, key) {
   const [, kind, arg] = /^reader:([^:]+):?(.*)$/s.exec(key) ?? [];
   if (kind === "browse") return openReader($, ".planning");
   if (kind === "open-path") return openReader($, arg);
   if (!reader) return;
   if (kind === "top") return void (await $.ui.scroll({ in: PANE, to: "start" }));
+  if (kind === "toc") { expand.toc = !expand.toc; $.ui.invalidate("ui.render"); return; }
+  if (kind === "goto") { expand.toc = false; $.ui.invalidate("ui.render"); return void (await scrollTo($, `sec${arg}`)); }
   if (kind === "close") { reader = null; $.ui.invalidate("ui.render"); return; }
   if (kind === "open") return openReader($, `${reader.path}/${arg}`);
   if (kind === "up") {
@@ -305,6 +395,7 @@ async function openPane($) {
 
 export function register(on, options) {
   openOnStart = options?.openOnStart !== false;
+  toasts = options?.toasts !== false;
   on("session.start", async ($, e, next) => {
     // A host without commands just goes without the report and the toggle; the band and hint do not depend on them.
     try {
@@ -411,7 +502,7 @@ export function register(on, options) {
     const link = (k) => void linkPress($, k.href);
     // A line is plain text, a row with a ▸/▾ button in front, or one whole-line button.
     const line = (l, i) => {
-      if (l.md !== undefined) return Markdown({ key: `md${i}`, text: l.md, onLinkPress: link });
+      if (l.md !== undefined) return Markdown({ key: l.key ?? `md${i}`, text: l.md, onLinkPress: link });
       if (Array.isArray(l)) return Text({ wrap: "truncate", children: segs(l) });
       if (l.toggle) {
         return Box({ flexDirection: "row", children: [
@@ -436,6 +527,21 @@ export function register(on, options) {
         })),
       ],
     });
+  });
+
+  // A tool row that read or wrote a .planning file: the engine's own row, and a line under it that opens the file in the reader.
+  // Clicks reach a mod only in the fullscreen terminal, so elsewhere the row stays as the engine draws it.
+  on("ui.render", { component: "ToolUse" }, async ($, e, next) => {
+    const p = e.props ?? {};
+    const file = p.input?.file_path;
+    if (!isGsd || e.surface !== "terminal" || !e.viewport?.isFullscreen || !["Read", "Write", "Edit"].includes(p.tool) || typeof file !== "string" || !/\.md$/i.test(file) || p.isRunning || p.isErrored) return next(e);
+    if (!planRel(file)) return next(e);
+    const { Box, Markdown } = $.ui.resolve(e);
+    const href = "file://" + encodeURI(file).replace(/[#?()]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+    return Box({ flexDirection: "column", children: [
+      await next(e),
+      Box({ paddingLeft: 2, children: [Markdown({ key: "open", dimColor: true, text: `⎿  [open in the GSD reader ↗](${href})`, pressableLinks: [href], onLinkPress: () => void fromTranscript($, href) })] }),
+    ] });
   });
 
   // The band above the prompt: the GSD line, and the drift warning when STATE.md is behind. While the pane is open it

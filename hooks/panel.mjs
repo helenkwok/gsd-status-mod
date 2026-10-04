@@ -1,6 +1,6 @@
 // Pure: what the GSD pane draws, as data. No $ access, so it is testable under plain Node.
 // A segment is [text, color, flags]: color is a Claude Code theme token or null, flags "b" for bold, "d" for dim.
-import { typical, phaseTotals, dailyBuckets, spark, dur } from "./history.mjs";
+import { typical, phaseTotals, dailyBuckets, spark, dur, stageOf, forecast, burst } from "./history.mjs";
 import { frontmatter, summarize, items } from "./state-line.mjs";
 
 // Theme tokens, so the pane follows the person's theme (light, dark, colour-blind) the way the engine's own UI does.
@@ -189,6 +189,26 @@ export function pages(text, max = 8000) {
   return out.length ? out : [""];
 }
 
+// The file as blocks that each begin at a heading (#, ## or ###), one Markdown element apiece, so the contents list can
+// scroll to a heading by its element's key. -> [{ md, heading?: { level, title } }]
+export function sections(text, max = 8000) {
+  const out = [];
+  let cur = [], fence = false, head = null;
+  const flush = () => {
+    const t = cur.join("\n").trimEnd();
+    if (t.trim()) pages(t, max).forEach((md, j) => out.push({ md, ...(j === 0 && head ? { heading: head } : {}) }));
+    cur = [];
+  };
+  for (const line of String(text ?? "").replace(/\r\n/g, "\n").split("\n")) {
+    if (/^\s*(```|~~~)/.test(line)) fence = !fence;
+    const h = !fence && /^(#{1,3})\s+(.+?)\s*#*\s*$/.exec(line);
+    if (h) { flush(); head = { level: h[1].length, title: h[2].replace(/[*_`]/g, "") }; }
+    cur.push(line);
+  }
+  flush();
+  return out;
+}
+
 // GSD files are full of task lists; the renderer draws "[x]" literally, so give them glyphs.
 const tick = (t) => t.replace(/^(\s*[-*] )\[( |x|X)\] /gm, (_, lead, c) => `${lead}${c === " " ? "○" : "✓"} `);
 
@@ -202,14 +222,20 @@ export function browseList(entries) {
 }
 
 // The reader view: replaces the dashboard. rd: { path, isFile, entries?, text? }. A line is a button or { md }.
-function readerModel(rd, header, inner) {
+function readerModel(rd, header, inner, ex = {}) {
   const crumb = String(rd.path).replace(/^\.planning\/?/, "") || ".planning";
   const lines = [{ button: { key: "reader:up", label: rd.path === ".planning" ? "‹ back to the dashboard" : "‹ back", color: C.dim, hotkey: "b" } }];
   if (rd.path !== ".planning") lines.push({ button: { key: "reader:close", label: "⌂ dashboard", color: C.dim, hotkey: "d" } });
   let right = null;
   if (rd.isFile) {
     // The engine refuses the WHOLE pane if one Markdown block passes 10000 characters, so a block is cut at 9900 as a last resort.
-    for (const chunk of pages(tick(stripFrontmatter(rd.text)))) lines.push({ md: chunk.slice(0, 9900) });
+    const secs = sections(tick(stripFrontmatter(rd.text)));
+    const heads = secs.map((x, i) => ({ i, ...x.heading })).filter((x) => x.title).slice(0, 30);
+    if (heads.length >= 3) {
+      lines.push({ button: { key: "reader:toc", label: `${ex.toc ? "▾" : "▸"} contents (${heads.length})`, color: C.dim, hotkey: "c" } });
+      if (ex.toc) for (const x of heads) lines.push({ button: { key: `reader:goto:${x.i}`, label: cut(`${"  ".repeat(x.level - 1)}${x.title}`, inner - 2), color: x.level === 1 ? C.arch : null } });
+    }
+    secs.forEach((x, i) => lines.push({ md: x.md.slice(0, 9900), key: `sec${i}` }));
     lines.push({ button: { key: "reader:top", label: "↑ back to top", color: C.dim, hotkey: "t" } });
   } else {
     const list = browseList(rd.entries);
@@ -255,6 +281,31 @@ function trendsModel(inp, header, inner, now) {
   return { header, panels: [{ id: "trends", color: C.amber, title: [["trends", C.amber, "b"]], right: [[`${runs.length} agents recorded`, C.dim]], lines }] };
 }
 
+// The timeline view: replaces the dashboard. One bar per agent over the latest working stretch, so agents that ran
+// together sit on top of each other and agents that ran one after another form a staircase.
+function timelineModel(inp, header, inner, now) {
+  const rows = burst(inp.history, inp.agents, now);
+  const lines = [{ button: { key: "timeline", label: "‹ back", color: C.dim, hotkey: "b" } }];
+  if (!rows.length) lines.push([["no agents recorded yet", C.dim]]);
+  else {
+    const t0 = Math.min(...rows.map((x) => x.a)), t1 = Math.max(...rows.map((x) => x.b));
+    const span = Math.max(t1 - t0, 60000), label = 9, width = Math.max(8, inner - label - 7);
+    const col = (t) => Math.min(width - 1, Math.floor(((t - t0) / span) * width));
+    const hue = { planning: C.agent, executing: C.main, checking: C.ok, other: C.faint };
+    lines.push([[" ".repeat(label), null], [hms(t0), C.dim], [" ".repeat(Math.max(1, width - 16)), null], [hms(t1), C.dim]]);
+    for (const x of rows) {
+      const c0 = col(x.a), n = Math.max(1, col(x.b) - c0 + (x.b >= t1 ? 1 : 0));
+      lines.push([[shortType(x.type).replace(/-purpose$/, "").slice(0, label - 1).padEnd(label), C.dim], [" ".repeat(c0), null], [(x.running ? "▒" : "█").repeat(Math.min(n, width - c0)), hue[stageOf(x.type)]], [` ${dur(x.b - x.a)}`, C.dim]]);
+    }
+    lines.push([[" ", null]]);
+    const pace = agentPace(rows.map((x) => ({ type: x.type, since: x.a, endedAt: x.b })), t1);
+    const ex = pace.executors >= 2 && pace.executorParallel != null;
+    lines.push([[`${plural(rows.length, "agent")} · ${dur(t1 - t0)} wall`, C.dim], ...(ex ? [[` · executors ×${pace.executorParallel.toFixed(1)}`, pace.executorParallel < 1.15 ? C.amber : C.ok], [pace.executorParallel < 1.15 ? " one at a time" : " overlapped", C.dim]] : [])]);
+    lines.push([["█ ", C.agent], ["planning  ", C.dim], ["█ ", C.main], ["executing  ", C.dim], ["█ ", C.ok], ["checking  ", C.dim], ["▒ ", C.dim], ["running", C.dim]]);
+  }
+  return { header, panels: [{ id: "timeline", color: C.agent, title: [["timeline", C.agent, "b"]], right: [["latest working stretch", C.dim]], lines }] };
+}
+
 // in: {
 //   history: [[endedAt, type, phase, durMs, turns, inTok, outTok, model]],   // finished agents of this project
 //   plans: [{ id, wave, done }],   // the current phase's plans
@@ -272,7 +323,7 @@ function trendsModel(inp, header, inner, now) {
 //   now: ms }
 // -> { header: segments, panels: [{ id, color, title: segments, right: segments|null, lines: [segments] }] }
 export function panelModel(inp, width = 62) {
-  const ex = { agents: new Set(), finished: false, blockers: false, log: false, roadmap: false, pace: false, trends: false, ...(inp.expand ?? {}) };
+  const ex = { agents: new Set(), finished: false, blockers: false, log: false, roadmap: false, pace: false, trends: false, timeline: false, toc: false, ...(inp.expand ?? {}) };
   const w = Math.max(36, width);
   const inner = w - 4; // the border and one column of padding on each side
   const fm = frontmatter(inp.state ?? "") ?? {};
@@ -283,8 +334,9 @@ export function panelModel(inp, width = 62) {
   const ws = inp.workstream ?? null;
   const header = [["GSD", C.main, "b"], ...(ws ? [[" · ", C.dim], [cut(ws.name, 24), C.amber]] : []), ...(phase ? [[" · ", C.dim], [cut(phase, w - 22), null, "b"]] : []), ...(fm.status ? [[` · ${fm.status}`, C.dim]] : [])];
 
-  if (inp.reader) return readerModel(inp.reader, header, inner);
+  if (inp.reader) return readerModel(inp.reader, header, inner, ex);
   if (ex.trends) return trendsModel(inp, header, inner, now);
+  if (ex.timeline) return timelineModel(inp, header, inner, now);
 
   // main: the session's vitals, and anything that needs a person
   const main = [];
@@ -364,8 +416,16 @@ export function panelModel(inp, width = 62) {
       lines.push([["time  ", C.dim], [pace.byType.slice(0, 3).map(([t, ms]) => `${t} ${Math.round((100 * ms) / pace.total)}%`).join(" · "), null]]);
       if (serialRun) lines.push([["serial: executors ran one at a time", C.amber], [` ×${pace.executorParallel.toFixed(1)}`, C.dim]]);
     }
+    const fc = forecast(shape, hist, inp.agents, now, u?.limits);
+    if (fc) {
+      const hue = fc.level === "warn" ? C.warn : fc.level === "amber" ? C.amber : null;
+      lines.push([["left  ", C.dim], [`≈ ${dur(fc.ms)} of executing`, null], [` · ${plural(fc.waves, "wave")} · from ${fc.runs} runs`, C.dim]]);
+      if (fc.pct != null) lines.push([["5h    ", C.dim], [`${Math.round(fc.pct)}%`, null, "b"], [fc.resetMs != null ? ` · resets in ${dur(Math.max(0, fc.resetMs))}` : "", C.dim]]);
+      if (fc.quota) lines.push([["quota ", C.dim], [`+${Math.round(fc.quota.add)}% (${Math.round(fc.quota.lo)}–${Math.round(fc.quota.hi)}) → ${Math.round(fc.quota.end)}%`, hue, hue ? "b" : undefined], [` · ${fc.quota.n} runs`, C.dim]]);
+      if (fc.quota && fc.nextN >= 2) lines.push([["next  ", C.dim], [`wave of ${fc.nextN} together`, null], [` +${Math.round(fc.quota.next.add)}% (${Math.round(fc.quota.next.lo)}–${Math.round(fc.quota.next.hi)}) → ${Math.round(fc.quota.next.end)}%`, C.dim]]);
+      if (!fc.quota && fc.level) lines.push([["longer than the window has left", hue]]);
+    }
     lines.push({ button: { key: "pace", label: `${ex.pace ? "▾ hide" : "▸"} details`, color: C.dim, hotkey: "p" } });
-    if (hist.length) lines.push({ button: { key: "trends", label: "▸ trends", color: C.dim, hotkey: "t" } });
     if (ex.pace) {
       for (const [wave, list] of shape.byWave) lines.push([[`  wave ${wave}  `, C.dim], [list.map((p) => `${p.id} ${p.done ? "✓" : "○"}`).join("  "), null]]);
       const wid = Math.max(...pace.byType.map(([t]) => t.length)) + 2;
@@ -374,6 +434,8 @@ export function panelModel(inp, width = 62) {
       if (here) lines.push([["  this phase  ", C.dim], [["planning", "executing", "checking"].filter((k) => here[k] > 0).map((k) => `${k} ${dur(here[k])}`).join(" · "), null]]);
       if (pace.executors >= 2 && pace.executorParallel != null) lines.push([["  executors in parallel ", C.dim], [`×${pace.executorParallel.toFixed(2)}`, null]]);
     }
+    if (hist.length) lines.push({ button: { key: "trends", label: "▸ trends", color: C.dim, hotkey: "t" } });
+    if (hist.length || (inp.agents ?? []).some((a) => a.status === "running")) lines.push({ button: { key: "timeline", label: "▸ timeline", color: C.dim, hotkey: "g" } });
     panels.push({ id: "pace", color: C.amber, title: [["pace", C.amber, "b"]], right: shape.total && serialPlans ? [["serial", C.amber]] : null, lines });
   }
 

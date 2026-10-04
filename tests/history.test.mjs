@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { KEEP, stageOf, addRun, typical, phaseTotals, dailyBuckets, spark, dur } from "../hooks/history.mjs";
+import { KEEP, stageOf, addRun, typical, phaseTotals, dailyBuckets, spark, dur, quotaPerRun, forecast, burst } from "../hooks/history.mjs";
+import { planShape } from "../hooks/panel.mjs";
 
 const run = (end, type, phase, ms) => [end, type, phase, ms, 10, 1000, 100, "m"];
 const MIN = 60000;
@@ -55,4 +56,51 @@ test("spark and dur", () => {
   assert.equal(dur(45 * MIN), "45m");
   assert.equal(dur(10400), "10s");
   assert.equal(dur(125 * MIN), "2h05");
+});
+
+const q = (end, ms, quota, width = 1) => [end, "gsd-executor", "1", ms, 10, 1, 1, "m", quota, width];
+
+test("quotaPerRun: median and middle half of measured runs, none under five, unmeasured (-1, absent) left out", () => {
+  const runs = [2, 3, 3, 4, 10].map((v, i) => q(i, MIN, v));
+  assert.deepEqual(quotaPerRun(runs), { n: 5, med: 3, lo: 3, hi: 4 });
+  assert.equal(quotaPerRun(runs.slice(1)), null); // four measured
+  assert.equal(quotaPerRun([...runs.slice(1), q(9, MIN, -1), run(9, "gsd-executor", "1", MIN)]), null); // -1 and an old 8-number row do not count
+});
+
+test("forecast: executor time per open wave less what a running one has spent; quota per executor adds up however they overlap", () => {
+  const runs = [10, 10, 10, 10, 10, 10].map((m, i) => q(i, m * MIN, 3, i % 2 ? 3 : 1));
+  const plans = [{ id: "a", wave: 1, done: true }, { id: "b", wave: 2, done: false }, { id: "c", wave: 2, done: false }, { id: "d", wave: 2, done: false }, { id: "e", wave: 3, done: false }];
+  const shape = planShape(plans); // 4 open: three together in wave 2, one in wave 3
+  const reset = new Date(1000 + 90 * MIN).toISOString();
+  const f = forecast(shape, runs, [{ type: "gsd-executor", status: "running", since: 1000 - 4 * MIN }], 1000, [{ kind: "five_hour", pct: 70, resetsAt: reset }]);
+  assert.equal(f.ms, 16 * MIN); // two waves x 10m, 4m already spent
+  assert.equal(f.nextN, 3);
+  assert.equal(f.resetMs, 90 * MIN);
+  assert.equal(f.quota.add, 12); // 4 executors x 3 points, whether run three together or one by one
+  assert.equal(f.quota.next.add, 9);
+  assert.equal(f.quota.end, 82);
+  assert.equal(f.level, null);
+  assert.equal(forecast(shape, runs, [], 1000, [{ kind: "five_hour", pct: 95, resetsAt: reset }]).level, "warn"); // 95 + 12 passes 100
+  assert.equal(forecast(shape, runs, [], 1000, [{ kind: "five_hour", pct: 80, resetsAt: reset }]).level, "amber"); // 92 of the window
+});
+
+test("forecast: time only until quota is measured; nothing without executor history or open plans", () => {
+  const runs = [10, 10, 10].map((m, i) => run(i, "gsd-executor", "1", m * MIN)); // three runs: enough for time, none measured for quota
+  const shape = planShape([{ id: "a", wave: 1, done: false }, { id: "b", wave: 2, done: false }]);
+  const f = forecast(shape, runs, [], 0, [{ kind: "five_hour", pct: 10, resetsAt: new Date(5 * MIN).toISOString() }]);
+  assert.equal(f.quota, null);
+  assert.equal(f.level, "amber"); // 20m of work, the window resets in 5m
+  assert.equal(forecast(shape, runs.slice(1), [], 0, []), null);
+  assert.equal(forecast(planShape([{ id: "a", wave: 1, done: true }]), runs, [], 0, []), null);
+});
+
+test("burst: the latest working stretch, split at a long quiet gap, running agents included", () => {
+  const H = 60 * MIN;
+  const runs = [run(1 * H, "gsd-executor", "1", 10 * MIN), run(5 * H, "gsd-planner", "1", 10 * MIN), run(5 * H + 20 * MIN, "gsd-executor", "1", 15 * MIN)];
+  const b = burst(runs, [{ type: "gsd-executor", status: "running", since: 5 * H + 25 * MIN }], 5 * H + 30 * MIN);
+  assert.deepEqual(b.map((x) => x.type), ["gsd-planner", "gsd-executor", "gsd-executor"]); // the 1h run is hours earlier
+  assert.equal(b[2].running, true);
+  assert.deepEqual([b[0].a, b[0].b], [5 * H - 10 * MIN, 5 * H]);
+  assert.equal(burst([], [], 0).length, 0);
+  assert.equal(burst(Array.from({ length: 20 }, (_, i) => run(i * MIN, "gsd-executor", "1", MIN)), [], 0).length, 12);
 });

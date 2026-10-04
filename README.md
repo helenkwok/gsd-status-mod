@@ -4,7 +4,7 @@ A live dashboard for [GSD](https://github.com/open-gsd/gsd-core) projects, as a 
 marked, an agent tree with forks and sub-agents and live clocks, context and cost, work streams, and a built-in markdown
 reader for `.planning`. Read-only, no dependencies, and it draws nothing outside a GSD project.
 
-![Demo: the pane while three agents run with their typical times beside the clocks, the pace details, the trends view, then the markdown reader opening a phase plan and returning to the dashboard](docs/screenshots/demo.gif)
+![Demo: the pane while three agents run with their typical times beside the clocks, the pace details, the trends view, the timeline, then the markdown reader opening a phase plan with its contents list and returning to the dashboard](docs/screenshots/demo.gif)
 
 Install (Claude Code 2.1.287 or later):
 
@@ -54,6 +54,17 @@ It is a Claude Code **mod**. It adds a live pane and four smaller things, each s
     over twice the typical. `t: ▸ trends` opens three charts: executor time per run (a sparkline of the last 30), time by
     phase split into planning, executing and checking, and agent time per day for 14 days, each with its numbers beside it.
     History starts from the day you update; it is per project and never read from transcripts.
+    *Fit:* with three or more past executor runs, a `left` line says how long the phase's open waves should take (one
+    typical executor run per wave, so plans that can run together count once), the `5h` line gives the window and when it
+    resets, and the `quota` line adds how far the rest of the phase should take the window. Quota is measured, not guessed:
+    while executors run, the plugin notes how far the 5-hour window rose and divides it by how many ran together, so a
+    single executor and a wave of three both give a per-executor figure. It needs five such measurements, shows a range
+    (the middle half of them), and leaves out any stretch with a reviewer or planner in it or where the window reset. The
+    account is shared with the main conversation and other sessions, so read it as a range. When the next wave runs plans
+    together, a `next` line shows what that wave alone should add.
+    `g: ▸ timeline` draws one bar per agent over the latest working stretch (until a gap of 30 minutes, at most 12 agents,
+    running ones shaded): agents that ran together sit on top of each other and agents that ran one after another form a
+    staircase, with the executors' parallelism underneath.
   - *agents*: a tree of running and finished agents, with forks (`⑂`) and sub-agents under their parent, and a live
     clock. Finished agents fold away while others run.
   - *markdown reader*: `o: ▸ read .planning` (or any entry under *work streams*) swaps the dashboard for a browser of
@@ -62,11 +73,14 @@ It is a Claude Code **mod**. It adds a live pane and four smaller things, each s
     header is hidden, `- [x]` shows as `✓` and `- [ ]` as `○`, and a relative link to another `.md` file under `.planning`
     opens it. A path opens only if its real location, symlinks followed, is still under `.planning`'s own, so a symlink inside
     `.planning` cannot lead the reader elsewhere. `b` goes back one level, and `d: ⌂ dashboard` returns to the dashboard from any depth, and `t: ↑ back to top` ends every file. Only `.planning` is readable.
+    A file with three or more headings gets `c: ▸ contents`: a list of its headings (up to 30, levels 1 to 3) that jumps
+    to one. In a fullscreen terminal, a Read, Write or Edit of a `.planning` markdown file also gets a line under its tool
+    row in the transcript, `open in the GSD reader`, that opens the pane on that file.
   - *last turn / turn*, *work streams* (counts and newest of phases, spikes, threads, todos, seeds, notes) and a
     *session log* of prompts, spawns, errors and new commits.
 
   Everything with a `▸` is clickable. With the pane focused (`ctrl+x`, then `Tab`) hotkeys work too: `1`-`6` agent rows,
-  `b` blockers, `r` roadmap, `p` pace, `t` trends, `w` workstream, `o` read `.planning`, `f` finished agents, `l` log. The pane is read-only. The cost is whatever Claude Code
+  `b` blockers, `r` roadmap, `p` pace, `t` trends, `g` timeline, `w` workstream, `o` read `.planning`, `c` contents (in a file), `f` finished agents, `l` log. The pane is read-only. The cost is whatever Claude Code
   reports for the session, shown as is; it is an estimate, not a bill. The band above the prompt is hidden while the
   pane is open, so the same line is not drawn twice.
 
@@ -79,18 +93,24 @@ one, a `w: ⇄ workstream …` button (click, or `w`) switches to the next. The 
 Everything follows a `.planning` symlink and draws nothing when there is nothing to show. The band and hint refresh at
 session start and after each turn; the pane also refreshes on tool calls and agent events.
 
+**Toasts** (the `toasts` option, on by default): short notices, each said once: an agent that has run more than twice its
+typical time, the rest of the phase getting tight against the 5-hour window (about 90% or more by the end, or the work
+outlasting the window when quota is not measured yet), and drift appearing between `STATE.md` and the commits.
+
 The band does not show plan usage (5-hour / weekly limits), since `quota-meter` and `limit-watch` already do; the pane's
 main box does show them, for the one-glance view.
 
 ## Screenshots
 
-The seven below are from a made-up demo project (`acme-portal`). The four pane images are the pane's own output from a live
+The eight below are from a made-up demo project (`acme-portal`). The five pane images are the pane's own output from a live
 Claude Code session with three background agents and a seeded made-up history, drawn to PNG from the terminal text (cropped to the pane); the three
 band images are from a terminal at least 16 rows tall.
 
 **The pane.** From the top: the main box (context, cost, limits, blockers), the roadmap with the current phase marked, the
-pace box (the plans left, their waves, and a "serial" note when each waits for the one before), the agents with a typical
-time beside each running clock (`typ 0:40`, from past runs), the last turn, and the work streams.
+pace box (the plans left and their waves, how long the rest should take and how far it should take the 5-hour window, and
+what the next wave of parallel plans adds), the agents with a typical time beside each running clock (`typ 0:40`, from past
+runs), the last turn, and the work streams. The history behind the pace box (22 executor runs, with quota measured on them) is
+made up for the demo, and the 5h and 7d figures are the demo session's own.
 
 ![The live pane: main box, roadmap, pace, agents with typical times, last turn and work streams](docs/screenshots/pane-overview.png)
 
@@ -100,7 +120,8 @@ phase's time by stage. The other `▸` rows open the same way, by click or key.
 ![The pane with the pace details expanded: waves, time by agent type and this phase's time by stage](docs/screenshots/pane-expanded.png)
 
 **The markdown reader.** A phase plan opened from `o: ▸ read .planning`: the YAML header is hidden, tasks show as `✓` and `○`,
-and the two blue links are relative links that open the next plan and the roadmap in the same pane.
+and the two blue links are relative links that open the next plan and the roadmap in the same pane. `c: ▾ contents` lists the
+headings; a click jumps to one.
 
 ![The markdown reader showing a phase plan: heading, links, task list, quote, table and code](docs/screenshots/pane-reader.png)
 
@@ -109,6 +130,12 @@ since a fresh demo project has no history: executor time per run, time by phase 
 checking, and agent time per day.
 
 ![The trends view: executor time per run, time by phase and stage, and agent time per day](docs/screenshots/pane-trends.png)
+
+**The timeline.** Opened with `g: ▸ timeline`: one bar per agent over the latest working stretch, coloured by stage. The two
+executors that ran together sit on top of each other, the third waited for them, and the three short bars at the right are
+agents still running or just done. The runs are made up for the demo.
+
+![The timeline: a planner, two executors that overlapped, a third one after them, and three short agents at the end](docs/screenshots/pane-timeline.png)
 
 **The band, in the three images below.** The `◐ medium · /effort`
 row, the `Sonnet 5.5 │ v1.0 · paused │ acme-portal` statusline and the `auto mode on` text are Claude Code's and the

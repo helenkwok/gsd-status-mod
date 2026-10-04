@@ -1,7 +1,7 @@
 {
   "name": "gsd-status-mod",
-  "version": "0.6.1",
-  "description": "A Claude Code mod for GSD projects: a live pane (roadmap, agent tree with forks, cost and context, work streams, session log) plus a status band, a next-action hint and /gsd-status, read from .planning/.",
+  "version": "0.7.0",
+  "description": "A Claude Code mod for GSD projects: a live pane (roadmap, agent tree with forks, cost and context, work streams, session log, pace and fit forecast, timeline, trends, a markdown reader) plus a status band, a next-action hint and /gsd-status, read from .planning/.",
   "author": {
     "name": "Helen Kwok"
   },
@@ -10,6 +10,12 @@
     "openOnStart": {
       "title": "Open the pane on start",
       "description": "Open the live GSD pane when a session starts in a GSD project. /gsd-board opens it later either way.",
+      "type": "boolean",
+      "default": true
+    },
+    "toasts": {
+      "title": "Toast notices",
+      "description": "Short notices when an agent runs far over its usual time, when the rest of a phase will not fit the 5-hour window, or when STATE.md drifts.",
       "type": "boolean",
       "default": true
     }

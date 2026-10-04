@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { segsOf, visibleAgents, agentTree, panelModel, streamInfo, commitFeed, commitCount, shortPath, gauge, kTokens, fmtUsd, limitLabel } from "../hooks/panel.mjs";
+import { segsOf, visibleAgents, agentTree, panelModel, streamInfo, commitFeed, commitCount, shortPath, gauge, kTokens, fmtUsd, limitLabel, sections } from "../hooks/panel.mjs";
 
 const text = (line) => segsOf(line).map((s) => s[0]).join("");
 const dump = (m) => [m.header.map((s) => s[0]).join(""), ...m.panels.flatMap((p) => [`[${p.id}] ${p.title.map((s) => s[0]).join("")} | ${p.right ? p.right.map((s) => s[0]).join("") : ""}`, ...p.lines.map(text)])].join("\n");
@@ -273,4 +273,49 @@ test("history: typical beside a running clock (amber when slow), trends button, 
   assert.match(flat, /median 30m/);
   const open = panelModel({ state, history: hist, plans: [{ id: "a", wave: 1, done: false }], expand: { pace: true }, now: B }, 70).panels.find((x) => x.id === "pace").lines;
   assert.ok(open.some((l) => Array.isArray(l) && /this phase/.test(l[0][0]) && /executing 2h30/.test(l[1][0])));
+});
+
+test("pace shows the fit of the rest of the phase, and a wave that runs together", () => {
+  const MIN = 60000, B = 10 * 3600000;
+  const state = "---\ngsd_state_version: 1\ncurrent_phase: 2\n---\n";
+  const hist = Array.from({ length: 6 }, (_, i) => [B + i * MIN, "gsd-executor", "2", 10 * MIN, 10, 1, 1, "m", 3, 1]);
+  const plans = [{ id: "a", wave: 1, done: false }, { id: "b", wave: 1, done: false }, { id: "c", wave: 2, done: false }];
+  const usage = { limits: [{ kind: "five_hour", pct: 90, resetsAt: new Date(B + 30 * MIN).toISOString() }] };
+  const m = panelModel({ state, history: hist, plans, usage, agents: [], now: B }, 70);
+  const text = m.panels.find((x) => x.id === "pace").lines.map((l) => (Array.isArray(l) ? l.map((s) => s[0]).join("") : l.button.label)).join("\n");
+  assert.match(text, /≈ 20m of executing · 2 waves · from 6 runs/);
+  assert.match(text, /5h\s+90% · resets in 30m/);
+  assert.match(text, /quota \+9% \(9–9\) → 99%/);
+  assert.match(text, /next\s+wave of 2 together \+6% \(6–6\) → 96%/);
+  assert.match(text, /▸ timeline/);
+});
+
+test("timeline: one bar per agent over the latest stretch; overlapped executors read as parallel, serial ones as a staircase", () => {
+  const MIN = 60000, B = 10 * 3600000;
+  const state = "---\ngsd_state_version: 1\n---\n";
+  const ex = (end, ms) => [end, "gsd-executor", "1", ms, 5, 1, 1, "m"];
+  const serial = panelModel({ state, history: [ex(B + 10 * MIN, 10 * MIN), ex(B + 20 * MIN, 10 * MIN)], expand: { timeline: true }, now: B + 20 * MIN }, 70);
+  const rows = serial.panels[0].lines.filter((l) => Array.isArray(l) && l[0][0].startsWith("executor"));
+  assert.equal(rows.length, 2);
+  assert.ok(rows[1][1][0].length > rows[0][1][0].length); // the second bar starts later
+  assert.match(serial.panels[0].lines.map((l) => (Array.isArray(l) ? l.map((s) => s[0]).join("") : l.button.label)).join("\n"), /executors ×1\.0 one at a time/);
+  const par = panelModel({ state, history: [ex(B + 10 * MIN, 10 * MIN), ex(B + 10 * MIN, 10 * MIN)], expand: { timeline: true }, now: B + 10 * MIN }, 70);
+  assert.match(par.panels[0].lines.map((l) => (Array.isArray(l) ? l.map((s) => s[0]).join("") : l.button.label)).join("\n"), /executors ×2\.0 overlapped/);
+  assert.match(panelModel({ state, history: [], expand: { timeline: true }, now: B }, 70).panels[0].lines.map((l) => (Array.isArray(l) ? l[0][0] : l.button.label)).join(" "), /no agents recorded yet/);
+});
+
+test("reader: sections split at headings outside code fences; contents list jumps to them by key", () => {
+  const text = "intro\n\n# One\ntext\n```\n# not a heading\n```\n## Two\nmore\n### Three\nx\n";
+  const s = sections(text);
+  assert.deepEqual(s.map((x) => x.heading?.title), [undefined, "One", "Two", "Three"]);
+  assert.ok(s[1].md.includes("# not a heading")); // stays inside its section
+  const rd = { path: ".planning/a.md", isFile: true, text };
+  const closed = panelModel({ state: "---\ngsd_state_version: 1\n---\n", reader: rd, now: 0 }, 70).panels[0].lines;
+  assert.equal(closed.filter((l) => l.md !== undefined).map((l) => l.key).join(), "sec0,sec1,sec2,sec3");
+  assert.equal(closed.find((l) => l.button?.key === "reader:toc").button.label, "▸ contents (3)");
+  assert.equal(closed.some((l) => l.button?.key?.startsWith("reader:goto")), false);
+  const open = panelModel({ state: "---\ngsd_state_version: 1\n---\n", reader: rd, expand: { toc: true }, now: 0 }, 70).panels[0].lines;
+  assert.deepEqual(open.filter((l) => l.button?.key?.startsWith("reader:goto")).map((l) => l.button.key), ["reader:goto:1", "reader:goto:2", "reader:goto:3"]);
+  const few = panelModel({ state: "---\ngsd_state_version: 1\n---\n", reader: { path: ".planning/b.md", isFile: true, text: "# a\nx\n## b\ny" }, now: 0 }, 70).panels[0].lines;
+  assert.equal(few.some((l) => l.button?.key === "reader:toc"), false); // fewer than three headings: no contents
 });

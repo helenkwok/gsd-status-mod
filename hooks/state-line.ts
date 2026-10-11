@@ -1,15 +1,17 @@
 // Pure: STATE.md text -> one-line summary. No $ access, so it is testable under plain Node.
-export function frontmatter(text) {
+import type { Fields, Frontmatter, Handoff, Workstream } from "./types.ts";
+
+export function frontmatter(text: string): Frontmatter | null {
   const m = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
   if (!m) return null;
-  const out = {};
-  let nested = null;
-  for (const raw of m[1].split(/\r?\n/)) {
+  const out: Frontmatter = {};
+  let nested: Fields | null = null;
+  for (const raw of (m[1] ?? "").split(/\r?\n/)) {
     const line = raw.replace(/\s+$/, "");
     if (!line || line.trimStart().startsWith("#")) continue;
     const kv = /^(\s*)([A-Za-z0-9_]+):\s*(.*)$/.exec(line);
     if (!kv) continue;
-    const [, indent, key, val] = kv;
+    const [, indent = "", key = "", val = ""] = kv;
     const v = val.replace(/^["']|["']$/g, "");
     if (!indent && v === "") { nested = out[key] = {}; continue; }
     if (indent && nested) nested[key] = v; else { nested = null; out[key] = v; }
@@ -17,7 +19,7 @@ export function frontmatter(text) {
   return out;
 }
 
-function ago(ms) {
+function ago(ms: number): string {
   const m = Math.floor(ms / 60000);
   if (m < 1) return "just now";
   if (m < 60) return `${m}m ago`;
@@ -28,7 +30,7 @@ function ago(ms) {
 
 // Free text (stopped_at, next_action) -> something that reads at a glance: the first sentence,
 // else cut at a word boundary. A "." inside a name like PLAN.md or 2026-09-09 is not a sentence end.
-export function summarize(text, max = 70) {
+export function summarize(text: unknown, max = 70): string {
   const s = String(text ?? "").replace(/\s+/g, " ").trim();
   if (!s) return "";
   const first = /^(.+?[.!?])(?=\s+[A-Z(]|$)/.exec(s)?.[1] ?? s;
@@ -40,7 +42,7 @@ export function summarize(text, max = 70) {
 }
 
 // True for a STATE.md that GSD wrote (its frontmatter carries gsd_state_version), not any file with that name.
-export function isGsdState(text) {
+export function isGsdState(text: string): boolean {
   const fm = frontmatter(text);
   return Boolean(fm && fm.gsd_state_version);
 }
@@ -48,10 +50,10 @@ export function isGsdState(text) {
 // Where work stopped and how many phases are done. No age: STATE.md's last_updated is touched by tools
 // without the content changing, so "17h ago" can sit beside a stopped_at from weeks earlier.
 // Returns null for a non-GSD file or when there is nothing the GSD statusline lacks.
-export function resumeLine(text, max = 70) {
+export function resumeLine(text: string, max = 70): string | null {
   const fm = frontmatter(text);
   if (!fm || !fm.gsd_state_version) return null;
-  const parts = [];
+  const parts: string[] = [];
   if (fm.stopped_at) parts.push("stopped: " + summarize(fm.stopped_at, max));
   const p = fm.progress;
   if (p && p.total_phases) parts.push(`${p.completed_phases ?? 0}/${p.total_phases} phases`);
@@ -61,7 +63,7 @@ export function resumeLine(text, max = 70) {
 // The command a next_action names, if it names one: the first /gsd-<name>, plus at most one argument that looks like
 // a phase number or version (2, 4.5, v1). Free-text arguments are dropped, so the result is something that can be
 // offered as a suggestion without guessing. null when the text names no command (prose such as "Nothing is pending").
-export function nextCommand(nextAction) {
+export function nextCommand(nextAction: unknown): string | null {
   const m = /(?<![\w/.~-])(\/gsd-[a-z][a-z0-9-]*)(?:\s+(v?\d+(?:\.\d+)*[a-z]?)(?![\w-]))?/.exec(String(nextAction ?? ""));
   return m ? m[1] + (m[2] ? " " + m[2] : "") : null;
 }
@@ -69,8 +71,8 @@ export function nextCommand(nextAction) {
 // HANDOFF.json is the resume note GSD writes on pause. Its next_action is the first thing to read when resuming.
 // The age is the handoff's own timestamp, so unlike STATE.md's it means what it says.
 // Returns { line, command }: the text for the hint line, and the command that text names (or null).
-export function handoffInfo(jsonText, now = Date.now(), max = 90) {
-  let j;
+export function handoffInfo(jsonText: string, now = Date.now(), max = 90): { line: string; command: string | null } | null {
+  let j: Handoff | null;
   try { j = JSON.parse(jsonText); } catch { return null; }
   if (!j || typeof j.next_action !== "string" || !j.next_action.trim()) return null;
   const shown = summarize(j.next_action, max);
@@ -83,28 +85,28 @@ export function handoffInfo(jsonText, now = Date.now(), max = 90) {
   return { line: parts.join(" · "), command: elsewhere ? null : nextCommand(shown) };
 }
 
-export function handoffLine(jsonText, now = Date.now(), max = 90) {
+export function handoffLine(jsonText: string, now = Date.now(), max = 90) {
   return handoffInfo(jsonText, now, max)?.line ?? null;
 }
 
 // Commits made after the one STATE.md was written at, counted from the git reflog text (.git/logs/HEAD),
 // so no git process is needed. null when the reflog does not contain that commit (pruned, rebased, other clone).
-export function commitsSince(reflogText, stateHead) {
+export function commitsSince(reflogText: string, stateHead: unknown): number | null {
   if (!stateHead || String(stateHead).length < 7) return null; // a short prefix would match unrelated reflog rows
   const rows = reflogText.split(/\r?\n/).filter(Boolean).map((l) => {
-    const [head, msg = ""] = l.split("\t");
+    const [head = "", msg = ""] = l.split("\t");
     const [, now] = head.split(" ");
     return { now, msg };
   });
   let at = -1;
-  rows.forEach((r, i) => { if (r.now && r.now.startsWith(stateHead)) at = i; });
+  rows.forEach((r, i) => { if (r.now && r.now.startsWith(String(stateHead))) at = i; });
   if (at < 0) return null;
   return rows.slice(at + 1).filter((r) => /^(commit|merge|pull|cherry-pick|revert)/.test(r.msg)).length;
 }
 
 // "⚠ ~217 commits since STATE.md" when STATE.md is well behind the repo, else null. Approximate: the reflog only
 // holds this clone's own HEAD moves, so it undercounts (measured: 124 against 217 from git rev-list).
-export function driftNote(stateText, reflogText, threshold = 5) {
+export function driftNote(stateText: string, reflogText: string, threshold = 5): string | null {
   const fm = frontmatter(stateText);
   if (!fm || !fm.gsd_state_version || !fm.state_head) return null;
   const n = commitsSince(reflogText, fm.state_head);
@@ -113,16 +115,16 @@ export function driftNote(stateText, reflogText, threshold = 5) {
 
 // Free-form lists in HANDOFF.json (blockers, human_actions_pending, remaining_tasks) come as strings or as objects
 // with some text field. Show each as one line of text; anything unreadable is skipped rather than guessed at.
-export function items(v) {
+export function items(v: unknown): string[] {
   if (v == null || v === "") return [];
   const list = Array.isArray(v) ? v : [v];
   return list
-    .map((x) => (typeof x === "string" ? x : x && typeof x === "object" ? (x.description ?? x.text ?? x.title ?? x.task ?? x.name ?? "") : String(x)))
+    .map((x: unknown) => { const o = x as Record<string, unknown>; return typeof x === "string" ? x : x && typeof x === "object" ? (o.description ?? o.text ?? o.title ?? o.task ?? o.name ?? "") : String(x); })
     .map((s) => summarize(s, 110))
     .filter(Boolean);
 }
 
-function listBlock(label, v) {
+function listBlock(label: string, v: unknown): string[] {
   const all = items(v);
   if (!all.length) return [];
   return [`${label} (${all.length})`, ...all.map((s) => "  - " + s)];
@@ -131,7 +133,7 @@ function listBlock(label, v) {
 // The full resume report for the /gsd-status command: everything the band and hint compress, in plain lines.
 // Pure. stateText may be null (no STATE.md), handoffText may be null (no HANDOFF.json), driftText is driftNote's output.
 // Returns { text, isGsd }: isGsd is false when there is no GSD STATE.md here, and text then says so.
-export function statusReport(stateText, handoffText, now = Date.now(), drift = null) {
+export function statusReport(stateText: string | null, handoffText: string | null, now = Date.now(), drift: string | null = null): { text: string; isGsd: boolean } {
   const fm = stateText == null ? null : frontmatter(stateText);
   if (!fm || !fm.gsd_state_version) {
     return { isGsd: false, text: "No GSD project here: .planning/STATE.md is missing or has no gsd_state_version." };
@@ -150,7 +152,7 @@ export function statusReport(stateText, handoffText, now = Date.now(), drift = n
   if (fm.stopped_at) out.push("Stopped at: " + summarize(fm.stopped_at, 220));
   if (drift) out.push(drift);
 
-  let j = null;
+  let j: Handoff | null = null;
   try { j = handoffText == null ? null : JSON.parse(handoffText); } catch { /* unreadable handoff: say so below */ }
   if (handoffText != null && !j) out.push("", "HANDOFF.json is present but is not valid JSON.");
   if (j && typeof j === "object") {
@@ -177,10 +179,10 @@ export function statusReport(stateText, handoffText, now = Date.now(), drift = n
 // GSD's own per-session choice, which a mod cannot see, so: the person's pick in the pane, else the name in
 // .planning/active-workstream, else the one that changed most recently.
 // cands: [{ name, mtimeMs }] (only workstreams that have a STATE.md) -> { name, index, total, names } | null
-export function pickWorkstream(cands, marker = "", choice = "") {
+export function pickWorkstream(cands: { name: string; mtimeMs?: number }[] | null | undefined, marker = "", choice = ""): Workstream | null {
   const list = [...(cands ?? [])].sort((a, b) => a.name.localeCompare(b.name));
   if (!list.length) return null;
-  const newest = [...list].sort((a, b) => (b.mtimeMs ?? 0) - (a.mtimeMs ?? 0))[0];
+  const newest = [...list].sort((a, b) => (b.mtimeMs ?? 0) - (a.mtimeMs ?? 0))[0]!; // list is not empty
   const hit = list.find((c) => c.name === choice) ?? list.find((c) => c.name === String(marker).trim()) ?? newest;
   return { name: hit.name, index: list.indexOf(hit) + 1, total: list.length, names: list.map((c) => c.name) };
 }

@@ -5,7 +5,7 @@ import { readFileSync, readdirSync, existsSync } from "node:fs";
 // The README must keep up with the code: a key, command, option, `$` call or image added without it fails here.
 const read = (p) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8");
 const readme = read("README.md");
-const code = ["hooks/panel.mjs", "hooks/gsd-status.mjs"].map(read).join("\n");
+const code = ["hooks/panel.ts", "hooks/gsd-status.ts"].map(read).join("\n");
 const plugin = JSON.parse(read(".claude-plugin/plugin.json"));
 const market = JSON.parse(read(".claude-plugin/marketplace.json"));
 

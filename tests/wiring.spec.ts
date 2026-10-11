@@ -4,7 +4,7 @@ let n = 0; // the module keeps its state in variables, so each test loads its ow
 
 // A fake `$` and a controlled clock, driving the real handlers: what the live session would do, minus the engine.
 async function rig({ runs = [], agents = [], usage }) {
-  const { register } = await import(`../hooks/gsd-status.mjs?copy=${++n}`);
+  const { register } = await import(`../hooks/gsd-status.ts?copy=${++n}`);
   const h = {}, state = { now: 1_000_000, agents, usage, toasts: [], saved: null, tick: null };
   const on = (name, a, b) => { const [m, fn] = b ? [a, b] : [null, a]; (h[name] ??= []).push({ m, fn }); };
   register(on, {});

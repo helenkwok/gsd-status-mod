@@ -1,7 +1,7 @@
 // Pure: what the GSD pane draws, as data. No $ access, so it is testable under plain Node.
 // A segment is [text, color, flags]: color is a Claude Code theme token or null, flags "b" for bold, "d" for dim.
-import { typical, phaseTotals, dailyBuckets, spark, dur, stageOf, forecast, burst } from "./history.mjs";
-import { frontmatter, summarize, items } from "./state-line.mjs";
+import { typical, phaseTotals, dailyBuckets, spark, dur, stageOf, forecast, burst } from "./history.ts";
+import { frontmatter, summarize, items } from "./state-line.ts";
 
 // Theme tokens, so the pane follows the person's theme (light, dark, colour-blind) the way the engine's own UI does.
 export const C = { main: "claude", agent: "suggestion", ok: "success", arch: "merged", amber: "warning", warn: "error", dim: "inactive", faint: "subtle" };

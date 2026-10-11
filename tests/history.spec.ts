@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { KEEP, stageOf, addRun, typical, phaseTotals, dailyBuckets, spark, dur, quotaPerRun, forecast, burst } from "../hooks/history.mjs";
-import { planShape } from "../hooks/panel.mjs";
+import { KEEP, stageOf, addRun, typical, phaseTotals, dailyBuckets, spark, dur, quotaPerRun, forecast, burst } from "../hooks/history.ts";
+import { planShape } from "../hooks/panel.ts";
 
 const run = (end, type, phase, ms) => [end, type, phase, ms, 10, 1000, 100, "m"];
 const MIN = 60000;

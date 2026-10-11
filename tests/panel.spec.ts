@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { segsOf, visibleAgents, agentTree, panelModel, streamInfo, commitFeed, commitCount, shortPath, gauge, kTokens, fmtUsd, limitLabel, sections } from "../hooks/panel.mjs";
+import { segsOf, visibleAgents, agentTree, panelModel, streamInfo, commitFeed, commitCount, shortPath, gauge, kTokens, fmtUsd, limitLabel, sections } from "../hooks/panel.ts";
 
 const text = (line) => segsOf(line).map((s) => s[0]).join("");
 const dump = (m) => [m.header.map((s) => s[0]).join(""), ...m.panels.flatMap((p) => [`[${p.id}] ${p.title.map((s) => s[0]).join("")} | ${p.right ? p.right.map((s) => s[0]).join("") : ""}`, ...p.lines.map(text)])].join("\n");
@@ -187,7 +187,7 @@ test("nothing is out of reach: agents, log, descriptions, contents and streams a
 });
 
 test("roadmap: reads the phase checklist and marks the current phase by its label", async () => {
-  const { roadmapPhases, panelModel } = await import("../hooks/panel.mjs");
+  const { roadmapPhases, panelModel } = await import("../hooks/panel.ts");
   const road = "## Phases\n- [x] **Phase 1: P0 — a** - x\n- [ ] **Phase 2.1: P1.5 — b (INSERTED)** - y\n- [ ] **Phase 3: P2 — c** - z\nnot a phase\n";
   assert.equal(roadmapPhases(road).length, 3);
   const state = "---\nstatus: planning\ncurrent_phase_name: P1.5 — b (vector)\ncompleted_plans: 2\ntotal_plans: 5\n---\n";
@@ -203,7 +203,7 @@ test("roadmap: reads the phase checklist and marks the current phase by its labe
 });
 
 test("workstream: named in the header, with a switch button only when there are several", async () => {
-  const { panelModel } = await import("../hooks/panel.mjs");
+  const { panelModel } = await import("../hooks/panel.ts");
   const state = "---\nstatus: executing\ncurrent_phase: 3\n---\n";
   const two = panelModel({ state, workstream: { name: "emsd", index: 1, total: 2, names: ["emsd", "nrb2"] }, now: 0 }, 62);
   assert.match(two.header.map((s) => s[0]).join(""), /GSD · emsd · phase 3/);
@@ -213,7 +213,7 @@ test("workstream: named in the header, with a switch button only when there are 
 });
 
 test("reader: pages cut at a line and not inside a fence; frontmatter hidden; browser lists folders first", async () => {
-  const { pages, stripFrontmatter, browseList, panelModel } = await import("../hooks/panel.mjs");
+  const { pages, stripFrontmatter, browseList, panelModel } = await import("../hooks/panel.ts");
   assert.equal(stripFrontmatter("---\nstatus: x\n---\n# Title\nbody"), "# Title\nbody");
   assert.equal(stripFrontmatter("no header"), "no header");
   const body = Array.from({ length: 60 }, (_, i) => `line ${i} ${"x".repeat(40)}`).join("\n");
@@ -239,8 +239,8 @@ test("reader: pages cut at a line and not inside a fence; frontmatter hidden; br
   assert.equal(file.panels[0].lines.at(-1).button?.key, "reader:top"); // the last row of a file is the way back to its top
   const huge = panelModel({ reader: { path: ".planning/x.md", isFile: true, text: "z".repeat(30000) } }, 62);
   assert.ok(huge.panels[0].lines.filter((l) => l.md !== undefined).every((l) => l.md.length <= 9900));
-  const { resolveLink } = await import("../hooks/gsd-status.mjs");
-  const { docRefs } = await import("../hooks/gsd-status.mjs");
+  const { resolveLink } = await import("../hooks/gsd-status.ts");
+  const { docRefs } = await import("../hooks/gsd-status.ts");
   assert.deepEqual(docRefs("`.planning/threads/x.md`, phases/04-b/04-01-PLAN.md:12, F:\\w\\.planning\\STATE.md, https://e.com/a.md and x.md twice: x.md"),
     [".planning/threads/x.md", "phases/04-b/04-01-PLAN.md", "F:\\w\\.planning\\STATE.md", "x.md"]);
   assert.equal(resolveLink(".planning/phases/04-x/04-01-PLAN.md", "./04-02-PLAN.md"), ".planning/phases/04-x/04-02-PLAN.md");
@@ -252,7 +252,7 @@ test("reader: pages cut at a line and not inside a fence; frontmatter hidden; br
 });
 
 test("pace: plan shape, agent time shares, parallelism, and a hint only on clear evidence", async () => {
-  const { planShape, agentPace, panelModel } = await import("../hooks/panel.mjs");
+  const { planShape, agentPace, panelModel } = await import("../hooks/panel.ts");
   const chain = [{ id: "04-01", wave: 1, done: true }, { id: "04-02", wave: 2, done: false }, { id: "04-03", wave: 3, done: false }];
   assert.deepEqual({ ...planShape(chain), byWave: undefined }, { total: 3, open: 2, waves: 2, widest: 1, byWave: undefined });
   assert.equal(planShape([{ id: "a", wave: 1, done: false }, { id: "b", wave: 1, done: false }]).widest, 2);
@@ -275,7 +275,7 @@ test("pace: plan shape, agent time shares, parallelism, and a hint only on clear
 });
 
 test("history: typical beside a running clock (amber when slow), trends button, trends view, this phase's stages", async () => {
-  const { panelModel } = await import("../hooks/panel.mjs");
+  const { panelModel } = await import("../hooks/panel.ts");
   const MIN = 60000, B = 1e9;
   const hist = [10, 20, 30, 40, 50].map((m, i) => [B + i, "gsd-executor", "4", m * MIN, 50, 1, 1, "m"]);
   const state = "---\ncurrent_phase: 4\n---\n";

@@ -1,6 +1,6 @@
-import { frontmatter, isGsdState, resumeLine, handoffInfo, driftNote, statusReport, pickWorkstream } from "./state-line.mjs";
-import { addRun, typical, forecast, dur } from "./history.mjs";
-import { panelModel, streamInfo, commitCount, commitFeed, shortPath, planShape, clock } from "./panel.mjs";
+import { frontmatter, isGsdState, resumeLine, handoffInfo, driftNote, statusReport, pickWorkstream } from "./state-line.ts";
+import { addRun, typical, forecast, dur } from "./history.ts";
+import { panelModel, streamInfo, commitCount, commitFeed, shortPath, planShape, clock } from "./panel.ts";
 
 // The command named by the handoff's next_action (see nextCommand) is offered as a dim suggestion: Tab puts it in the
 // prompt box and nothing runs until the person presses Enter. No command named, no suggestion.
@@ -14,7 +14,7 @@ let isGsd = false;
 let live = freshLive(); // what the pane draws: events of this session plus what the last refresh read
 let lastRefreshAt = 0;
 const seen = new Map(); // agent id -> { since, status, endedAt }: when this module first saw it, and how it last stood
-let hist = []; // what finished agents of this project left behind (see history.mjs), kept in $.store across sessions
+let hist = []; // what finished agents of this project left behind (see history.ts), kept in $.store across sessions
 let histLoaded = false;
 const steps = new Map(); // agent id -> how many model responses it has made so far
 const forks = new Set(); // ids of agents started as forks of their parent (only the spawn event says so)
@@ -329,7 +329,7 @@ async function openReader($, path) {
 }
 
 // A link inside the open file -> the .planning path it points at, or null (not a relative .md link, or outside .planning).
-// It lives here, not in panel.mjs: a press handler runs where only this file's own functions are visible, not imported names.
+// It lives here, not in panel.ts: a press handler runs where only this file's own functions are visible, not imported names.
 export function resolveLink(from, href) {
   const h = String(href ?? "").split("#")[0];
   if (!h || h.startsWith("/") || /^[a-z][a-z0-9+.-]*:/i.test(h) || !/\.md$/i.test(h)) return null;

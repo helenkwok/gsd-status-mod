@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { summarize, isGsdState, resumeLine, handoffLine, handoffInfo, nextCommand, commitsSince, driftNote } from "../hooks/state-line.mjs";
+import { summarize, isGsdState, resumeLine, handoffLine, handoffInfo, nextCommand, commitsSince, driftNote } from "../hooks/state-line.ts";
 
 const NOW = Date.parse("2026-10-03T12:00:00Z");
 const fm = (body) => `---\ngsd_state_version: "1.0"\n${body}\n---\n# State\n`;
@@ -132,7 +132,7 @@ test("driftNote: not GSD, no state_head, or unknown commit -> null", () => {
   assert.equal(driftNote(fm("state_head: fffffff"), log, 1), null);
 });
 
-import { statusReport } from "../hooks/state-line.mjs";
+import { statusReport } from "../hooks/state-line.ts";
 
 const STATE = `---
 gsd_state_version: 1.0
@@ -180,7 +180,7 @@ test("statusReport: tolerates a sparse STATE.md and odd list shapes", () => {
 });
 
 test("pickWorkstream: the person's pick, else the marker, else the most recently changed", async () => {
-  const { pickWorkstream } = await import("../hooks/state-line.mjs");
+  const { pickWorkstream } = await import("../hooks/state-line.ts");
   const c = [{ name: "emsd", mtimeMs: 5 }, { name: "nrb2", mtimeMs: 9 }];
   assert.equal(pickWorkstream([], "", ""), null);
   assert.deepEqual(pickWorkstream(c, "", ""), { name: "nrb2", index: 2, total: 2, names: ["emsd", "nrb2"] });

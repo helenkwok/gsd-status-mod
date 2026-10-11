@@ -1,4 +1,4 @@
 {
   "hooks": {},
-  "modules": ["./gsd-status.mjs"]
+  "modules": ["./gsd-status.ts"]
 }

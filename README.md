@@ -4,7 +4,7 @@ A live dashboard for [GSD](https://github.com/open-gsd/gsd-core) projects, as a 
 marked, an agent tree with forks and sub-agents and live clocks, context and cost, work streams, and a built-in markdown
 reader for `.planning`. Read-only, no dependencies, and it draws nothing outside a GSD project.
 
-![Demo: the pane while three agents run with their typical times beside the clocks, the pace details, the trends view, the timeline, then the markdown reader opening a phase plan with its contents list and returning to the dashboard](docs/screenshots/demo.gif)
+![Demo: the pane opens the blocker that needs a person, the markdown reader opens the phase plan that names it and returns to the dashboard; then three agents run with their typical times beside the clocks, the pace details, the trends view and the timeline](docs/screenshots/demo.gif)
 
 Install (Claude Code 2.1.287 or later):
 

@@ -240,6 +240,9 @@ test("reader: pages cut at a line and not inside a fence; frontmatter hidden; br
   const huge = panelModel({ reader: { path: ".planning/x.md", isFile: true, text: "z".repeat(30000) } }, 62);
   assert.ok(huge.panels[0].lines.filter((l) => l.md !== undefined).every((l) => l.md.length <= 9900));
   const { resolveLink } = await import("../hooks/gsd-status.mjs");
+  const { docRefs } = await import("../hooks/gsd-status.mjs");
+  assert.deepEqual(docRefs("`.planning/threads/x.md`, phases/04-b/04-01-PLAN.md:12, F:\\w\\.planning\\STATE.md, https://e.com/a.md and x.md twice: x.md"),
+    [".planning/threads/x.md", "phases/04-b/04-01-PLAN.md", "F:\\w\\.planning\\STATE.md", "x.md"]);
   assert.equal(resolveLink(".planning/phases/04-x/04-01-PLAN.md", "./04-02-PLAN.md"), ".planning/phases/04-x/04-02-PLAN.md");
   assert.equal(resolveLink(".planning/phases/04-x/a.md", "../../ROADMAP.md#top"), ".planning/ROADMAP.md");
   assert.equal(resolveLink(".planning/a.md", "../../etc/x.md"), null);

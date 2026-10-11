@@ -363,6 +363,40 @@ function planRel(file) {
   return base && f.startsWith(`${base}/.planning/`) ? f.slice(base.length + 1) : null;
 }
 
+// Markdown file names a reply mentions, as written: `.planning/threads/x.md`, `phases/04-x/04-01-PLAN.md`, a bare
+// `04-01-PLAN.md`, an absolute path or a Windows one; a `:line` after it and web links are left out. -> [string]
+export function docRefs(text) {
+  const out = new Set();
+  for (const m of String(text ?? "").matchAll(/(?:https?:\/\/\S*)|((?:[A-Za-z]:)?[\w.~\/\\-]*?[\w-]+\.md)(?![\w-])/gi)) if (m[1]) out.add(m[1]);
+  return [...out];
+}
+
+// A name from a reply -> the ".planning/..." path of an existing file it means, or null. Bare names must match one file.
+let docIndex = null, docIndexAt = 0;
+async function docTarget($, ref) {
+  const t = ref.replace(/\\/g, "/");
+  const isFile = async (rel) => (await $.fs.stat(at(rel)).catch(() => null))?.kind === "file";
+  const i = t.lastIndexOf(".planning/");
+  const tries = i >= 0 ? [t.slice(i)] : /^([a-z]:)?\/|^~/i.test(t) ? [] : t.includes("/") ? [`.planning/${t}`, ...(wsBase ? [`${wsBase}/${t}`] : [])] : null;
+  if (tries) { for (const rel of tries) if (!rel.includes("..") && (await isFile(rel))) return rel; return null; }
+  const now = await $.clock.now();
+  if (!docIndex || now - docIndexAt > 60000) { // ponytail: one walk of .planning a minute, 5 deep and 4000 files at most
+    docIndex = new Map(); docIndexAt = now;
+    let n = 0;
+    const walk = async (dir, depth) => {
+      for (const e of await $.fs.list(at(dir)).catch(() => [])) {
+        if (e.name.startsWith(".") || ++n > 4000) continue;
+        const rel = `${dir}/${e.name}`;
+        if (e.kind === "dir" && depth < 5) await walk(rel, depth + 1);
+        else if (/\.md$/i.test(e.name)) docIndex.set(e.name, [...(docIndex.get(e.name) ?? []), rel]);
+      }
+    };
+    await walk(".planning", 1);
+  }
+  const hits = docIndex.get(t) ?? [];
+  return hits.length === 1 ? hits[0] : null;
+}
+
 // A click on the "open in the GSD reader" line under a tool row in the transcript: show the pane and open that file.
 async function fromTranscript($, href) {
   const rel = planRel(decodeURIComponent(String(href).replace(/^file:\/\//, "")));
@@ -541,6 +575,22 @@ export function register(on, options) {
     return Box({ flexDirection: "column", children: [
       await next(e),
       Box({ paddingLeft: 2, children: [Markdown({ key: "open", dimColor: true, text: `⎿  [open in the GSD reader ↗](${href})`, pressableLinks: [href], onLinkPress: () => void fromTranscript($, href) })] }),
+    ] });
+  });
+
+  // A reply that names .planning documents: the engine's own drawing, and a line under it whose links open them in the reader.
+  on("ui.render", { component: "AssistantMessage" }, async ($, e, next) => {
+    if (!isGsd || e.surface !== "terminal" || !e.viewport?.isFullscreen) return next(e);
+    const rels = [];
+    for (const ref of docRefs(e.props?.text).slice(0, 12)) { const r = await docTarget($, ref); if (r && !rels.includes(r)) rels.push(r); }
+    if (!rels.length) return next(e);
+    const { Box, Markdown } = $.ui.resolve(e);
+    const href = (rel) => "file://" + encodeURI(at(rel).replace(/\\/g, "/")).replace(/[#?()]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+    const hrefs = rels.map(href);
+    const text = `⎿  open in the GSD reader: ${rels.map((r, k) => `[${r.split("/").pop()}](${hrefs[k]})`).join(" · ")}`;
+    return Box({ flexDirection: "column", children: [
+      await next(e),
+      Box({ paddingLeft: 2, children: [Markdown({ key: "docs", dimColor: true, text, pressableLinks: hrefs, onLinkPress: (l) => void fromTranscript($, l.href) })] }),
     ] });
   });
 

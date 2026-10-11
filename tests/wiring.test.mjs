@@ -74,3 +74,20 @@ test("quota: a reviewer in the stretch, or a window reset, leaves it unmeasured"
   await q.fire("turn.complete", { agentId: "e1", durationMs: 600000, usage: {} });
   assert.equal(q.state.saved.runs[0][8], -1);
 });
+
+test("a reply naming .planning documents gets a line of reader links under it; other replies are left alone", async () => {
+  const r = await rig({ usage: { context: {}, cost: { usd: 0 }, rateLimits: [] } });
+  await r.fire("session.start", { isInteractive: true });
+  const files = new Set(["/p/.planning/threads/x.md", "/p/.planning/phases/04-b/04-01-PLAN.md"]);
+  r.$.fs.stat = async (p) => (files.has(p) ? { kind: "file" } : null);
+  r.$.fs.list = async (p) => (p === "/p/.planning" ? [{ name: "phases", kind: "dir" }] : p === "/p/.planning/phases" ? [{ name: "04-b", kind: "dir" }] : p === "/p/.planning/phases/04-b" ? [{ name: "04-01-PLAN.md", kind: "file" }] : []);
+  r.$.ui.resolve = () => ({ Box: (p) => ({ box: p }), Markdown: (p) => ({ md: p }) });
+  const draw = (text) => r.fire("ui.render", { component: "AssistantMessage", surface: "terminal", viewport: { isFullscreen: true }, props: { text } });
+  const out = await draw("Check .planning/threads/x.md and 04-01-PLAN.md:12, not missing.md or https://x.io/a.md");
+  const line = out.box.children[1].box.children[0].md;
+  assert.equal(line.pressableLinks.length, 2);
+  assert.match(line.text, /\[x\.md\]\(file:\/\/\/p\/\.planning\/threads\/x\.md\) · \[04-01-PLAN\.md\]/);
+  const plain = { component: "AssistantMessage", surface: "terminal", viewport: { isFullscreen: true }, props: { text: "nothing here" } };
+  assert.deepEqual(await r.fire("ui.render", plain), plain); // next(e) unchanged
+  assert.deepEqual((await r.fire("ui.render", { ...plain, viewport: { isFullscreen: false }, props: { text: ".planning/threads/x.md" } })).props.text, ".planning/threads/x.md");
+});

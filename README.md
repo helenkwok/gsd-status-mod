@@ -75,7 +75,11 @@ It is a Claude Code **mod**. It adds a live pane and four smaller things, each s
     `.planning` cannot lead the reader elsewhere. `b` goes back one level, and `d: ⌂ dashboard` returns to the dashboard from any depth, and `t: ↑ back to top` ends every file and every folder of more than 30 entries. A folder lists all its entries. Only `.planning` is readable.
     A file with three or more headings gets `c: ▸ contents`: a list of its headings (all of them, levels 1 to 3) that jumps
     to one. In a fullscreen terminal, a Read, Write or Edit of a `.planning` markdown file also gets a line under its tool
-    row in the transcript, `open in the GSD reader`, that opens the pane on that file.
+    row in the transcript, `open in the GSD reader`, that opens the pane on that file. A reply that names `.planning` markdown
+    files gets the same line under it, one link per file: `.planning/...` paths, paths relative to `.planning`
+    (`phases/04-x/04-01-PLAN.md`), absolute and Windows paths into it, and a bare file name when exactly one file has it.
+    Only files that exist are linked; the reply itself is drawn as written. Claude Code 2.1.296 leaves paths in replies
+    as plain text ([#79839](https://github.com/anthropics/claude-code/issues/79839)).
   - *last turn / turn*, *work streams* (counts and newest of phases, spikes, threads, todos, seeds, notes; an open stream lists its five
     newest, and `▸ all N in the reader` opens its folder) and a *session log* of prompts, spawns, errors and new commits
     (the last 40, all shown when opened).

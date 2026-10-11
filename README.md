@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/helenkwok/gsd-status-mod/actions/workflows/test.yml"><img alt="tests" src="https://github.com/helenkwok/gsd-status-mod/actions/workflows/test.yml/badge.svg"></a>
-  <img alt="version 0.8.0" src="https://img.shields.io/badge/version-0.8.0-d97757">
+  <img alt="version 0.8.1" src="https://img.shields.io/badge/version-0.8.1-d97757">
   <img alt="Claude Code 2.1.287+" src="https://img.shields.io/badge/Claude%20Code-2.1.287%2B-d97757">
   <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-3fb950"></a>
 </p>
@@ -15,7 +15,7 @@ person, work streams, and a built-in markdown reader for `.planning`.
 
 > [!NOTE]
 > **Read-only.** It reads `.planning/` and the git reflog, writes no files, runs no processes and makes no network calls.
-> It draws nothing outside a GSD project. No dependencies. Details: [What it can touch](#-what-it-can-touch-reach).
+> It draws nothing outside a GSD project. No runtime dependencies. Details: [What it can touch](#-what-it-can-touch-reach).
 
 <p align="center"><img src="docs/screenshots/demo-blocker.gif" alt="Demo: the pane shows 1 needs a person; the blockers open (Stripe webhook secret missing); the reader opens the phase plan, whose blocker line names it; back on the dashboard" width="100%"></p>
 
@@ -281,16 +281,26 @@ one shown, and that is the other mod's behaviour.
 
 ## 🧪 Try it from a clone
 
-Needs Claude Code 2.1.287 or later (`claude --version`) and Node 20+ only if you want to run the tests. There is nothing
-to build or install: the plugin is loaded from its folder for one session.
+Needs Claude Code 2.1.287 or later (`claude --version`). There is nothing to build: the plugin is TypeScript 7, loaded by
+Claude Code from its folder as is, for one session.
 
     git clone https://github.com/helenkwok/gsd-status-mod ~/gsd-status-mod
     cd <a GSD project>        # it reads .planning from the folder you start claude in (or its main checkout, in a worktree)
     claude --plugin-dir ~/gsd-status-mod
 
-To check the plugin itself: `cd ~/gsd-status-mod`, then `claude plugin validate .` (the marketplace file),
-`claude plugin validate .claude-plugin/plugin.json` (the hooks and `$` calls) and `node --test tests/*.test.mjs`. The
-tests include a README check: every key, command, option and image the code has must be in this file.
+To check the plugin itself (Node 24 or later): `cd ~/gsd-status-mod`, then
+
+    npm ci
+    npm test          # node:test on tests/*.spec.ts (Node runs the .ts directly)
+    npm run lint      # oxlint
+    npm run check     # tsc (TypeScript 7) and oxlint's type-aware rules
+    claude plugin validate .                              # the marketplace file
+    claude plugin validate .claude-plugin/plugin.json     # the hooks and $ calls
+
+The tests include a README check: every key, command, option and image the code has must be in this file. `npm run
+check` needs `.claude-plugin/types/`, which Claude Code writes when it loads the mod from this folder; those files are
+not in git, so CI runs the tests and the plain lint only. ESLint is not used: typescript-eslint does not support
+TypeScript 7 yet.
 
 ## ❓ FAQ
 

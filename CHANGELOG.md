@@ -2,6 +2,11 @@
 
 One entry per release, newest first. Versions follow `.claude-plugin/plugin.json`; a test checks that the two agree.
 
+## 0.8.1 (2026-10-11)
+
+- The mod is TypeScript 7 (`hooks/*.ts`, loaded by Claude Code as is), type-checked strictly and linted with oxlint's
+  type-aware rules. No change in what it does. Tests run on Node 24 (`tests/*.spec.ts`).
+
 ## 0.8.0 (2026-10-11)
 
 - A reply that names `.planning` markdown files gets a line under it, `open in the GSD reader`, with one link per file

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { summarize, isGsdState, resumeLine, handoffLine, handoffInfo, nextCommand, commitsSince, driftNote } from "../hooks/state-line.ts";
 
 const NOW = Date.parse("2026-10-03T12:00:00Z");
-const fm = (body) => `---\ngsd_state_version: "1.0"\n${body}\n---\n# State\n`;
+const fm = (body: string): string => `---\ngsd_state_version: "1.0"\n${body}\n---\n# State\n`;
 
 // --- summarize
 test("summarize: first sentence, not a blind cut", () =>
@@ -41,7 +41,7 @@ progress:
   assert.ok(!/ago/.test(s));
 });
 test("resumeLine: never repeats status or plan counts", () => {
-  const s = resumeLine(fm("status: verifying\nstopped_at: a\nprogress:\n  total_plans: 13\n  completed_plans: 13"));
+  const s = resumeLine(fm("status: verifying\nstopped_at: a\nprogress:\n  total_plans: 13\n  completed_plans: 13"))!;
   assert.ok(!s.includes("verifying") && !s.includes("13/13"));
 });
 test("resumeLine: not a GSD STATE.md -> null", () =>
@@ -53,7 +53,7 @@ test("resumeLine: CRLF", () =>
   assert.equal(resumeLine("---\r\ngsd_state_version: 1\r\nstopped_at: a\r\n---\r\n"), "GSD · stopped: a"));
 
 // --- handoffLine
-const ho = (o) => JSON.stringify(o);
+const ho = (o: object): string => JSON.stringify(o);
 test("handoffLine: next action and the handoff's own age", () =>
   assert.equal(handoffLine(ho({ next_action: "Run /gsd-execute-phase 22. Then verify.", timestamp: "2026-10-03T09:00:00Z" }), NOW),
     "next: Run /gsd-execute-phase 22 · handoff 3h ago"));
@@ -86,17 +86,17 @@ test("nextCommand: free-text arguments are dropped; prose and paths give null", 
 });
 test("handoffInfo: the command comes only from the text that is shown", () => {
   const na = "Nothing is in flight. Highest-value next step is a re-run. Then /gsd-new-milestone later.";
-  const r = handoffInfo(ho({ next_action: na }), NOW);
+  const r = handoffInfo(ho({ next_action: na }), NOW)!;
   assert.equal(r.line, "next: Nothing is in flight");
   assert.equal(r.command, null);                     // /gsd-new-milestone is not in the shown text
 });
 test("handoffInfo: a command named in the shown text is offered, and appears in the line", () => {
-  const r = handoffInfo(ho({ next_action: "Run /gsd-execute-phase 2. Wave 1 is 02-01.", timestamp: "2026-10-03T09:00:00Z" }), NOW);
+  const r = handoffInfo(ho({ next_action: "Run /gsd-execute-phase 2. Wave 1 is 02-01.", timestamp: "2026-10-03T09:00:00Z" }), NOW)!;
   assert.equal(r.command, "/gsd-execute-phase 2");
-  assert.ok(r.line.includes(r.command));
+  assert.ok(r.line.includes(r.command!));
 });
 test("handoffInfo: no suggestion when the action says to go elsewhere", () => {
-  const r = handoffInfo(ho({ next_action: "Open a session in ~/workspace/other-project and run /gsd-verify-work 4" }), NOW);
+  const r = handoffInfo(ho({ next_action: "Open a session in ~/workspace/other-project and run /gsd-verify-work 4" }), NOW)!;
   assert.equal(r.command, null);
   assert.ok(r.line.startsWith("next: Open a session"));
 });
@@ -106,7 +106,7 @@ test("handoffInfo: bad input -> null", () => {
 });
 
 // --- commitsSince / driftNote
-const H = (o, n, msg) => `${o} ${n} Name <e@x> 1700000000 +0000\t${msg}`;
+const H = (o: string, n: string, msg: string): string => `${o} ${n} Name <e@x> 1700000000 +0000\t${msg}`;
 const A = "a".repeat(40), B = "b".repeat(40), C = "c".repeat(40), D = "d".repeat(40), E = "e".repeat(40);
 const log = [H("0".repeat(40), A, "commit (initial): one"), H(A, B, "commit: two"), H(B, C, "checkout: moving from x to y"),
   H(C, D, "commit: three"), H(D, E, "merge feature: Fast-forward")].join("\n");
@@ -121,7 +121,7 @@ test("commitsSince: unknown commit or no state_head -> null", () => {
   assert.equal(commitsSince("", "abc1234"), null);
 });
 test("driftNote: only at or above the threshold", () => {
-  const st = (h) => fm(`state_head: ${h}`);
+  const st = (h: string): string => fm(`state_head: ${h}`);
   assert.equal(driftNote(st(B), log, 2), "⚠ ~2 commits since STATE.md");
   assert.equal(driftNote(st(B), log, 5), null);
   assert.equal(driftNote(st(E), log, 1), null);
@@ -184,10 +184,10 @@ test("pickWorkstream: the person's pick, else the marker, else the most recently
   const c = [{ name: "emsd", mtimeMs: 5 }, { name: "nrb2", mtimeMs: 9 }];
   assert.equal(pickWorkstream([], "", ""), null);
   assert.deepEqual(pickWorkstream(c, "", ""), { name: "nrb2", index: 2, total: 2, names: ["emsd", "nrb2"] });
-  assert.equal(pickWorkstream(c, "emsd\n", "").name, "emsd");
-  assert.equal(pickWorkstream(c, "emsd", "nrb2").name, "nrb2");
-  assert.equal(pickWorkstream(c, "gone", "gone").name, "nrb2");
-  assert.equal(pickWorkstream([c[0]], "", "").total, 1);
+  assert.equal(pickWorkstream(c, "emsd\n", "")!.name, "emsd");
+  assert.equal(pickWorkstream(c, "emsd", "nrb2")!.name, "nrb2");
+  assert.equal(pickWorkstream(c, "gone", "gone")!.name, "nrb2");
+  assert.equal(pickWorkstream([c[0]!], "", "")!.total, 1);
 });
 
 test("commitsSince ignores a state_head too short to be a hash", () => {

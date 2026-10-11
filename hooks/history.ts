@@ -40,7 +40,7 @@ export type Forecast = {
   ms: number; waves: number; open: number; nextN: number; runs: number; pct: number | null; resetMs: number | null; level: "warn" | "amber" | null;
   quota: { add: number; lo: number; hi: number; end: number; endHi: number; n: number; next: { add: number; lo: number; hi: number; end: number } } | null;
 };
-export function forecast(shape: PlanShape | null | undefined, runs: Run[] | null | undefined, agents: Agent[] | null | undefined, now: number, limits: Limit[] | null | undefined): Forecast | null {
+export function forecast(shape: PlanShape | null | undefined, runs: Run[] | null | undefined, agents: Pick<Agent, "type" | "status" | "since">[] | null | undefined, now: number, limits: Limit[] | null | undefined): Forecast | null {
   const typ = typical(runs, "executor", 3);
   if (!shape?.open || !typ) return null;
   const spent = Math.max(0, ...(agents ?? []).filter((a) => a.status === "running" && bare(a.type) === "executor" && a.since).map((a) => now - a.since!)); // since: kept by the filter
@@ -63,7 +63,7 @@ export function forecast(shape: PlanShape | null | undefined, runs: Run[] | null
 // The latest working stretch for the timeline: runs that ended and agents running now, going back from the newest until a
 // quiet gap longer than `gap`, at most `max` of them, by start time. -> [{ type, a, b, running }]
 export type Interval = { type: string | undefined; a: number; b: number; running: boolean };
-export function burst(runs: Run[] | null | undefined, running: Agent[] | null | undefined, now: number, gap = 30 * 60000, max = 12): Interval[] {
+export function burst(runs: Run[] | null | undefined, running: Pick<Agent, "type" | "status" | "since">[] | null | undefined, now: number, gap = 30 * 60000, max = 12): Interval[] {
   const iv = (runs ?? []).map((r): Interval => ({ type: r[1], a: r[0] - r[3], b: r[0], running: false }))
     .concat((running ?? []).filter((x) => x.status === "running" && x.since).map((x) => ({ type: x.type, a: x.since!, b: now, running: true }))) // since: kept by the filter
     .sort((x, y) => y.a - x.a);

@@ -3,11 +3,13 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 
 // The README must keep up with the code: a key, command, option, `$` call or image added without it fails here.
-const read = (p) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8");
+// String paths, not URLs: the engine's URL type is not the one node:fs takes.
+const root = `${import.meta.dirname}/..`;
+const read = (p: string): string => readFileSync(`${root}/${p}`, "utf8");
 const readme = read("README.md");
 const code = ["hooks/panel.ts", "hooks/gsd-status.ts"].map(read).join("\n");
-const plugin = JSON.parse(read(".claude-plugin/plugin.json"));
-const market = JSON.parse(read(".claude-plugin/marketplace.json"));
+const plugin = JSON.parse(read(".claude-plugin/plugin.json")) as { name: string; version: string; description: string; userConfig: Record<string, { default: unknown }> };
+const market = JSON.parse(read(".claude-plugin/marketplace.json")) as { name: string; plugins: { name: string; description: string }[] };
 
 test("README: every hotkey is in the key table", () => {
   for (const k of new Set([...code.matchAll(/hotkey: "(.)"/g)].map((m) => m[1]))) assert.match(readme, new RegExp(`^\\| \`${k}\` \\|`, "m"), k);
@@ -16,7 +18,7 @@ test("README: every hotkey is in the key table", () => {
 
 test("README: every command and option, with its default", () => {
   for (const [, c] of code.matchAll(/command: "([\w-]+)"/g)) assert.ok(readme.includes(`| \`/${c}\` |`), c);
-  for (const [k, v] of Object.entries(plugin.userConfig)) assert.match(readme, new RegExp(`^\\| \`${k}\` \\|.*\\| \`${v.default}\` \\|$`, "m"), k);
+  for (const [k, v] of Object.entries(plugin.userConfig)) assert.match(readme, new RegExp(`^\\| \`${k}\` \\|.*\\| \`${String(v.default)}\` \\|$`, "m"), k);
 });
 
 test("README: every $ call the code makes is in the reach section", () => {
@@ -28,8 +30,8 @@ test("README: every $ call the code makes is in the reach section", () => {
 
 test("README: images exist and every screenshot is used", () => {
   const used = [...readme.matchAll(/(?:\]\(|src=")(docs\/screenshots\/[^)"]+)/g)].map((m) => m[1]);
-  for (const p of used) assert.ok(existsSync(new URL(`../${p}`, import.meta.url)), p);
-  for (const f of readdirSync(new URL("../docs/screenshots", import.meta.url))) assert.ok(used.includes(`docs/screenshots/${f}`), f);
+  for (const p of used) assert.ok(existsSync(`${root}/${p}`), p);
+  for (const f of readdirSync(`${root}/docs/screenshots`)) assert.ok(used.includes(`docs/screenshots/${f}`), f);
 });
 
 test("versions and names agree: plugin, marketplace, changelog, install commands", () => {

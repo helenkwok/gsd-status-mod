@@ -34,6 +34,10 @@ only. To try it without installing, see [Try it from a clone](#-try-it-from-a-cl
 
 ## ✨ Features
 
+<p align="center"><img src="docs/screenshots/demo-tour.gif" alt="Tour: three agents run with live clocks and their typical times; p opens the pace details, t the trends, g the timeline, then back to the dashboard" width="100%"></p>
+
+<p align="center"><sub>Agents with live clocks and typical times, then <code>p</code> pace details, <code>t</code> trends, <code>g</code> timeline.</sub></p>
+
 - **Live pane**: main box (context, cost, limits, blockers), roadmap, pace, agents, last turn, work streams, session log.
 - **Pace and fit**: how the phase's plans run in waves, how long the rest should take, and how far it should take the
   5-hour window.

@@ -1,57 +1,60 @@
 import { frontmatter, isGsdState, resumeLine, handoffInfo, driftNote, statusReport, pickWorkstream } from "./state-line.ts";
 import { addRun, typical, forecast, dur } from "./history.ts";
 import { panelModel, streamInfo, commitCount, commitFeed, shortPath, planShape, clock } from "./panel.ts";
+import type { EngineInterface, On, PluginOptions, PressedLink, TurnCompleteInput } from "claude-code";
+import type { Agent, Expand, Handoff, Line, Live, Reader, Run, Segment, Stream, Usage, Workstream } from "./types.ts";
 
 // The command named by the handoff's next_action (see nextCommand) is offered as a dim suggestion: Tab puts it in the
 // prompt box and nothing runs until the person presses Enter. No command named, no suggestion.
 
 // Module state: the render hooks only read these, never touch the file system.
-let rows = { resume: null, drift: null, handoff: null, command: null };
+let rows: { resume: string | null; drift: string | null; handoff: string | null; command: string | null } = { resume: null, drift: null, handoff: null, command: null };
 let suggested = false;
 let panePlaced = false; // true while our pane is on screen: the band above the prompt would only repeat it
 let openOnStart = true;
 let isGsd = false;
 let live = freshLive(); // what the pane draws: events of this session plus what the last refresh read
 let lastRefreshAt = 0;
-const seen = new Map(); // agent id -> { since, status, endedAt }: when this module first saw it, and how it last stood
-let hist = []; // what finished agents of this project left behind (see history.ts), kept in $.store across sessions
+const seen = new Map<string, { since: number; status: string; endedAt: number | null }>(); // agent id -> { since, status, endedAt }: when this module first saw it, and how it last stood
+let hist: Run[] = []; // what finished agents of this project left behind (see history.ts), kept in $.store across sessions
 let histLoaded = false;
-const steps = new Map(); // agent id -> how many model responses it has made so far
-const forks = new Set(); // ids of agents started as forks of their parent (only the spawn event says so)
+const steps = new Map<string, number>(); // agent id -> how many model responses it has made so far
+const forks = new Set<string>(); // ids of agents started as forks of their parent (only the spawn event says so)
 const PANE = "gsd-board";
 // What the person has opened in the pane by clicking (or pressing a hotkey): agent rows, finished agents, blockers, streams, log.
-let reader = null; // the markdown reader: { path, isFile, entries | text }, or null for the dashboard
-const expand = { agents: new Set(), roadmap: false, pace: false, trends: false, timeline: false, toc: false, finished: false, blockers: false, streams: new Set(), log: false };
+let reader: Reader | null = null; // the markdown reader: { path, isFile, entries | text }, or null for the dashboard
+const expand: Required<Expand> = { agents: new Set(), roadmap: false, pace: false, trends: false, timeline: false, toc: false, finished: false, blockers: false, streams: new Set(), log: false };
 let toasts = true; // short notices (an agent far over its usual time, a phase that will not fit the window, drift)
-const told = new Set(); // agent ids already toasted about
-let lastLevel; // how the phase fit the 5-hour window at the last look: undefined (not yet seen), null, "amber" or "warn"
-let lastDrift; // the drift note at the last look
-let cluster = null; // the agents that overlapped, for measuring quota: { p0, r0, ids, ok }; it closes when none is running
-const qOf = new Map(); // agent id -> { q, n } once its cluster has closed
-const runOf = new Map(); // agent id -> its row in `hist`, so a quota measured after the row was written can be filled in
+const told = new Set<string>(); // agent ids already toasted about
+let lastLevel: string | null | undefined; // how the phase fit the 5-hour window at the last look: undefined (not yet seen), null, "amber" or "warn"
+let lastDrift: string | null | undefined; // the drift note at the last look
+let cluster: { p0: number | null; r0: string | null; ids: Set<string>; ok: boolean } | null = null; // the agents that overlapped, for measuring quota: { p0, r0, ids, ok }; it closes when none is running
+const qOf = new Map<string, { q: number; n: number }>(); // agent id -> { q, n } once its cluster has closed
+const runOf = new Map<string, Run>(); // agent id -> its row in `hist`, so a quota measured after the row was written can be filled in
 const PANE_SIZE = { columns: 64, rows: 16 };
 const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
 const STREAMS = ["phases", "spikes", "threads", "quick", "todos", "seeds", "notes"];
 
 // A press on one of the pane's buttons: flip what it names. The key says which: "agent:<id>", "stream:<name>", or a word.
-function flip(key) {
+function flip(key: string): void {
   if (key === "ws") {
     const n = wsInfo?.names ?? [];
-    if (n.length > 1) wsChoice = n[(n.indexOf(wsInfo.name) + 1) % n.length];
+    if (n.length > 1) wsChoice = n[(n.indexOf(wsInfo!.name) + 1) % n.length]!; // names come from wsInfo
     return;
   }
-  const [kind, id] = String(key).split(/:(.*)/s);
+  const [kind = "", id] = String(key).split(/:(.*)/s);
   const set = kind === "agent" ? expand.agents : kind === "stream" ? expand.streams : null;
-  if (set) { if (!set.delete(id)) set.add(id); return; }
-  if (kind in expand && typeof expand[kind] === "boolean") expand[kind] = !expand[kind];
+  if (set) { if (!set.delete(id!)) set.add(id!); return; } // id: "agent:" and "stream:" keys carry one
+  const flags: Record<string, unknown> = expand; // the on/off switches, by name
+  if (kind in flags && typeof flags[kind] === "boolean") flags[kind] = !flags[kind];
 }
 
-function freshLive() {
+function freshLive(): Live {
   return { state: null, roadmap: null, plans: [], workstream: null, handoff: null, usage: null, agents: [], streams: [], log: [], isRunning: false, turn: null, receipt: null,
     commits: 0, newest: null, startCommits: 0, startCost: null };
 }
 
-function note(kind, text, at) {
+function note(kind: string, text: string, at: number): void {
   live.log = [...live.log, { at, kind, text }].slice(-40);
 }
 
@@ -59,21 +62,21 @@ function note(kind, text, at) {
 // ".planning/STATE.md" then goes missing and the pane flips to "No GSD project here".
 let root = "";
 let planRoot = ""; // where .planning lives: the session root, or the main checkout when the session is in a linked worktree
-const at = (path) => {
+const at = (path: string): string => {
   const base = path.startsWith(".planning") ? planRoot || root : root;
   return base ? `${base}/${path}` : path;
 };
 // Workstream mode: STATE.md, ROADMAP.md and the work streams live under .planning/workstreams/<name>/.
 let wsBase = ""; // "" for a normal project, else ".planning/workstreams/<name>"
 let wsChoice = ""; // the workstream the person picked in the pane
-let wsInfo = null; // { name, index, total, names }
-const plan = (name) => `${wsBase || ".planning"}/${name}`;
-const read = ($, path) => $.fs.read(at(path)).catch(() => null);
-async function resolvePlan($) {
+let wsInfo: Workstream | null = null; // { name, index, total, names }
+const plan = (name: string): string => `${wsBase || ".planning"}/${name}`;
+const read = ($: EngineInterface, path: string): Promise<string | null> => $.fs.read(at(path)).catch(() => null);
+async function resolvePlan($: EngineInterface): Promise<void> {
   wsBase = ""; wsInfo = null;
   if ((await read($, ".planning/STATE.md")) != null) return;
   const dirs = (await $.fs.list(at(".planning/workstreams")).catch(() => [])).filter((e) => e.kind === "dir" && !e.name.startsWith("."));
-  const cands = [];
+  const cands: { name: string; mtimeMs: number }[] = [];
   for (const d of dirs) {
     const st = await $.fs.stat(at(`.planning/workstreams/${d.name}/STATE.md`)).catch(() => null);
     if (st) cands.push({ name: d.name, mtimeMs: st.mtimeMs ?? 0 });
@@ -82,7 +85,7 @@ async function resolvePlan($) {
   if (pick) { wsInfo = pick; wsBase = `.planning/workstreams/${pick.name}`; }
 }
 
-async function findRoot($) {
+async function findRoot($: EngineInterface): Promise<void> {
   if (root) return;
   root = String((await $.session.root().catch(() => "")) ?? "").replace(/\/+$/, "");
   // A linked worktree has no .planning of its own: its .git file points into <main>/.git/worktrees/<name>.
@@ -94,7 +97,7 @@ async function findRoot($) {
 }
 
 // The reflog lives in .git/logs/HEAD; in a linked worktree .git is a file pointing at the real git dir.
-async function reflog($) {
+async function reflog($: EngineInterface): Promise<string | null> {
   const direct = await read($, ".git/logs/HEAD");
   if (direct != null) return direct;
   const ptr = await read($, ".git");
@@ -102,20 +105,20 @@ async function reflog($) {
   return dir ? read($, `${dir}/logs/HEAD`) : null;
 }
 
-async function readUsage($) {
+async function readUsage($: EngineInterface): Promise<Usage | null> {
   const u = await $.session.usage().catch(() => null);
   if (!u) return null;
   return { pct: u.context?.percent ?? null, tokens: u.context?.tokens ?? null, window: u.context?.window ?? null, costUsd: u.cost?.usd ?? null,
     limits: (u.rateLimits ?? []).map((r) => ({ kind: r.kind, pct: r.percentUsed, resetsAt: r.resetsAt })) };
 }
 
-const five = (u) => (u?.limits ?? []).find((l) => /five|5h/i.test(l.kind) && Number.isFinite(l.pct)) ?? null;
+const five = (u: Usage | null) => (u?.limits ?? []).find((l) => /five|5h/i.test(l.kind) && Number.isFinite(l.pct)) ?? null;
 
 // Quota per executor, measured over the stretch in which executors overlapped: how far the 5-hour window rose, divided by how many
 // ran. One executor alone and a wave of three both give a per-executor figure. Anything but executors in the stretch (or a window
 // reset, or no window) and it is not measured. ponytail: the main conversation and other sessions add to the rise too, so the
 // figure is shown as a range once enough runs agree; per-agent token weighting would need the usage of each run's own rows.
-async function trackCluster($, agents) {
+async function trackCluster($: EngineInterface, agents: Agent[]): Promise<void> {
   const running = agents.filter((a) => a.status === "running" && a.type);
   if (running.length && !cluster) {
     const f = five(live.usage);
@@ -125,7 +128,7 @@ async function trackCluster($, agents) {
   if (cluster) for (const a of running) { cluster.ids.add(a.id); if (String(a.type).replace(/^gsd-/, "") !== "executor") cluster.ok = false; }
   if (running.length || !cluster) return;
   const f = five(live.usage), n = cluster.ids.size;
-  const q = cluster.ok && n && f && f.resetsAt === cluster.r0 && f.pct >= cluster.p0 ? Math.round(((f.pct - cluster.p0) / n) * 100) / 100 : -1;
+  const q = cluster.ok && n && f && f.resetsAt === cluster.r0 && f.pct >= cluster.p0! ? Math.round(((f.pct - cluster.p0!) / n) * 100) / 100 : -1;
   let patched = false;
   for (const id of cluster.ids) {
     qOf.set(id, { q, n });
@@ -137,10 +140,10 @@ async function trackCluster($, agents) {
 }
 
 // Short notices, each said once: an agent more than twice its usual time, the phase's fit to the window getting worse, drift appearing.
-function toast($, text) {
+function toast($: EngineInterface, text: string): void {
   if (toasts) void Promise.resolve($.ui.toast(String(text).slice(0, 200))).catch(() => {});
 }
-function alerts($, now) {
+function alerts($: EngineInterface, now: number): void {
   for (const a of live.agents) {
     if (a.status !== "running" || !a.since || told.has(a.id)) continue;
     const typ = typical(hist, a.type);
@@ -148,9 +151,9 @@ function alerts($, now) {
   }
   const fc = forecast(planShape(live.plans), hist, live.agents, now, live.usage?.limits);
   const level = fc?.level ?? null;
-  if (level && level !== lastLevel) {
+  if (fc && level && level !== lastLevel) { // level is set only when fc is
     toast($, fc.quota ? `${fc.open} plans left would take the 5h window to about ${Math.round(fc.quota.end)}%${level === "warn" ? ", it may run out" : ""}`
-      : `about ${dur(fc.ms)} of work left, the 5h window resets in ${dur(Math.max(0, fc.resetMs))}`);
+      : `about ${dur(fc.ms)} of work left, the 5h window resets in ${dur(Math.max(0, fc.resetMs!))}`); // amber without quota: resetMs is known
   }
   lastLevel = level;
   if (lastDrift !== undefined && rows.drift && !lastDrift) toast($, rows.drift);
@@ -158,7 +161,7 @@ function alerts($, now) {
 }
 
 // Live agents, with when each was first seen and, as they finish, a line in the log.
-async function readAgents($, now) {
+async function readAgents($: EngineInterface, now: number): Promise<Agent[]> {
   const listed = await $.agent.list().catch(() => []);
   const agents = listed.map((a) => {
     const before = seen.get(a.id);
@@ -177,15 +180,15 @@ async function readAgents($, now) {
 
 // The current phase's plans and whether each is done, for the pace box. The phase folder is matched by number (04 is 4,
 // 02.1 is 2.1); a plan is done when its NN-MM-SUMMARY.md exists; a plan with no `wave:` is left out.
-async function readPlans($, state) {
+async function readPlans($: EngineInterface, state: string): Promise<Live["plans"]> {
   const num = String(frontmatter(state)?.current_phase ?? "").replace(/^0+(?=\d)/, "");
   if (!num) return [];
   const dirs = await $.fs.list(at(plan("phases"))).catch(() => []);
-  const dir = dirs.find((e) => e.kind === "dir" && e.name.split("-")[0].replace(/^0+(?=\d)/, "") === num);
+  const dir = dirs.find((e) => e.kind === "dir" && (e.name.split("-")[0] ?? "").replace(/^0+(?=\d)/, "") === num);
   if (!dir) return [];
   const base = `${plan("phases")}/${dir.name}`;
   const files = await $.fs.list(at(base)).catch(() => []);
-  const out = [];
+  const out: Live["plans"] = [];
   for (const f of files) {
     const id = /^(.*)-PLAN\.md$/.exec(f.name)?.[1];
     if (!id) continue;
@@ -197,30 +200,30 @@ async function readPlans($, state) {
 
 const histKey = () => `runs:${root}`;
 
-async function loadHist($) {
+async function loadHist($: EngineInterface): Promise<void> {
   if (histLoaded) return;
   histLoaded = true;
-  const h = await $.store.get(histKey()).catch(() => null);
+  const h = (await $.store.get(histKey()).catch(() => null)) as { runs?: Run[] } | null; // what recordRun stored
   hist = Array.isArray(h?.runs) ? h.runs : [];
 }
 
 // An agent's run ended: keep its numbers (no description, no text). Internal agents have no type and are skipped.
-async function recordRun($, e) {
+async function recordRun($: EngineInterface, e: TurnCompleteInput): Promise<void> {
   const a = live.agents.find((x) => x.id === e.agentId);
   if (!a?.type || !(e.durationMs > 0)) return;
-  const u = e.usage ?? {};
+  const u: Partial<NonNullable<TurnCompleteInput["usage"]>> = e.usage ?? {};
   const now = await $.clock.now(); // awaited first: agents that end together must not read `hist` before one another's update lands
-  const m = qOf.get(e.agentId); // the quota, when this agent's cluster closed before its row was written
-  const row = [now, a.type, String(frontmatter(live.state)?.current_phase ?? ""), e.durationMs, steps.get(e.agentId) ?? 0,
+  const m = qOf.get(e.agentId!); // agentId: `a` was found by it. The quota, when this agent's cluster closed before its row was written
+  const row: Run = [now, a.type, String(frontmatter(live.state ?? "")?.current_phase ?? ""), e.durationMs, steps.get(e.agentId!) ?? 0,
     (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0), u.output_tokens ?? 0, u.model ?? "", m?.q ?? -1, m?.n ?? 0];
   hist = addRun(hist, row);
-  runOf.set(e.agentId, row);
-  steps.delete(e.agentId);
+  runOf.set(e.agentId!, row);
+  steps.delete(e.agentId!);
   await $.store.set(histKey(), { v: 1, runs: hist }).catch(() => {});
 }
 
-async function readStreams($) {
-  const out = [];
+async function readStreams($: EngineInterface): Promise<Stream[]> {
+  const out: Stream[] = [];
   for (const name of STREAMS) {
     // In workstream mode the project-wide folders (threads, spikes, seeds...) stay at .planning/, beside the workstream's own.
     const here = await $.fs.list(at(plan(name))).catch(() => []);
@@ -232,7 +235,7 @@ async function readStreams($) {
 }
 
 // Everything the band, the hint and the pane need. The work streams are listed only when `full` (they change rarely).
-async function refresh($, full = true) {
+async function refresh($: EngineInterface, full = true): Promise<void> {
   await findRoot($);
   await loadHist($);
   await resolvePlan($);
@@ -242,16 +245,16 @@ async function refresh($, full = true) {
   isGsd = state != null && isGsdState(state);
   const handoffText = isGsd ? (await read($, plan("HANDOFF.json"))) ?? (wsBase ? await read($, ".planning/HANDOFF.json") : null) : null;
   const handoff = handoffText == null ? null : handoffInfo(handoffText, now);
-  rows = { resume: isGsd ? resumeLine(state) : null, handoff: handoff?.line ?? null, command: handoff?.command ?? null, drift: null };
+  rows = { resume: isGsd ? resumeLine(state!) : null, handoff: handoff?.line ?? null, command: handoff?.command ?? null, drift: null };
   if (!isGsd) { live = freshLive(); $.ui.invalidate("ui.render"); return; }
 
-  let parsed = null;
+  let parsed: Handoff | null = null;
   try { parsed = handoffText == null ? null : JSON.parse(handoffText); } catch { /* unreadable: no handoff rows */ }
   const log = await reflog($);
   if (log != null) {
-    if (rows.resume && /^state_head:/m.test(state)) rows.drift = driftNote(state, log);
+    if (rows.resume && /^state_head:/m.test(state!)) rows.drift = driftNote(state!, log); // isGsd: state was read
     const feed = commitFeed(log, 5);
-    if (live.newest && feed.length && feed[0].hash !== live.newest) {
+    if (live.newest && feed.length && feed[0]!.hash !== live.newest) {
       const fresh = [];
       for (const c of feed) { if (c.hash === live.newest) break; fresh.push(c); }
       for (const c of fresh.reverse()) note("commit", `${c.hash} ${c.msg}`, now);
@@ -265,13 +268,13 @@ async function refresh($, full = true) {
   live.usage = await readUsage($);
   live.agents = await readAgents($, now);
   await trackCluster($, live.agents);
-  if (full) { live.streams = await readStreams($); live.roadmap = await read($, plan("ROADMAP.md")); live.plans = await readPlans($, state); }
+  if (full) { live.streams = await readStreams($); live.roadmap = await read($, plan("ROADMAP.md")); live.plans = await readPlans($, state!); }
   alerts($, now);
   $.ui.invalidate("ui.render"); // render output is cached until invalidated
 }
 
 // /gsd-status: the full report, read fresh from disk each time so it is never behind the band.
-async function report($) {
+async function report($: EngineInterface): Promise<string> {
   await findRoot($);
   await resolvePlan($);
   const state = await read($, plan("STATE.md"));
@@ -286,7 +289,7 @@ async function report($) {
 }
 
 // At most every 2 seconds, and not awaited by the hooks that call it, so it never slows a tool call down.
-async function soon($) {
+async function soon($: EngineInterface): Promise<void> {
   const now = await $.clock.now();
   if (!isGsd || now - lastRefreshAt < 2000) return;
   await refresh($, false).catch(() => {});
@@ -294,7 +297,7 @@ async function soon($) {
 
 // Once a second while the pane is open and something is running: redraw so the clocks move, and every 5 seconds
 // re-read agents and commits, since an agent can end without a hook of ours firing.
-async function tick($) {
+async function tick($: EngineInterface): Promise<void> {
   if (!isGsd || !panePlaced) return;
   if (!live.isRunning && !live.agents.some((a) => a.status === "running")) return;
   const now = await $.clock.now();
@@ -305,14 +308,14 @@ async function tick($) {
 // The reader opens a folder listing or one file; path is a ".planning/..." path, so it can never leave .planning.
 // A symlink inside .planning may point anywhere, so the reader opens a path only if its real location is still under
 // .planning's own real location (.planning itself is often a symlink to the external store).
-async function insidePlanning($, p) {
-  const norm = (s) => String(s ?? "").replace(/\\/g, "/");
+async function insidePlanning($: EngineInterface, p: string): Promise<boolean> {
+  const norm = (s: string | undefined): string => String(s ?? "").replace(/\\/g, "/");
   const [base, target] = await Promise.all([".planning", p].map((x) => $.fs.stat(at(x), { resolve: true }).catch(() => null)));
   const b = norm(base?.realPath), r = norm(target?.realPath);
   return Boolean(b && r && (r === b || r.startsWith(b + "/")));
 }
 
-async function openReader($, path) {
+async function openReader($: EngineInterface, path: string): Promise<void> {
   const parts = String(path).split("/").filter((x) => x && x !== ".");
   if (parts[0] !== ".planning" || parts.includes("..")) return;
   const p = parts.join("/");
@@ -330,7 +333,7 @@ async function openReader($, path) {
 
 // A link inside the open file -> the .planning path it points at, or null (not a relative .md link, or outside .planning).
 // It lives here, not in panel.ts: a press handler runs where only this file's own functions are visible, not imported names.
-export function resolveLink(from, href) {
+export function resolveLink(from: string, href: string | null | undefined): string | null {
   const h = String(href ?? "").split("#")[0];
   if (!h || h.startsWith("/") || /^[a-z][a-z0-9+.-]*:/i.test(h) || !/\.md$/i.test(h)) return null;
   const parts = String(from).split("/").slice(0, -1);
@@ -339,13 +342,13 @@ export function resolveLink(from, href) {
 }
 
 // A click on a link in the open file: a relative .md link opens in the reader; anything else is left alone.
-async function linkPress($, href) {
+async function linkPress($: EngineInterface, href: string): Promise<void> {
   const t = reader && resolveLink(reader.path, href);
   if (t) await openReader($, t);
 }
 
 // Brings the element with this key into view (null: the top), trying again while a pane that just changed is not drawn yet.
-async function scrollTo($, key) {
+async function scrollTo($: EngineInterface, key: string | null): Promise<void> {
   try {
     await $.clock.sleep(120);
     for (let n = 0; n < 8; n++) {
@@ -358,24 +361,24 @@ async function scrollTo($, key) {
 
 // A path inside this project's .planning -> ".planning/..." (what the reader opens), else null.
 // ponytail: a file read through the external store's own path (.planning is usually a symlink to it) gets no link.
-function planRel(file) {
+function planRel(file: string | null | undefined): string | null {
   const f = String(file ?? "").replace(/\\/g, "/"), base = String(planRoot || root).replace(/\\/g, "/");
   return base && f.startsWith(`${base}/.planning/`) ? f.slice(base.length + 1) : null;
 }
 
 // Markdown file names a reply mentions, as written: `.planning/threads/x.md`, `phases/04-x/04-01-PLAN.md`, a bare
 // `04-01-PLAN.md`, an absolute path or a Windows one; a `:line` after it and web links are left out. -> [string]
-export function docRefs(text) {
-  const out = new Set();
+export function docRefs(text: string | null | undefined): string[] {
+  const out = new Set<string>();
   for (const m of String(text ?? "").matchAll(/(?:https?:\/\/\S*)|((?:[A-Za-z]:)?[\w.~\/\\-]*?[\w-]+\.md)(?![\w-])/gi)) if (m[1]) out.add(m[1]);
   return [...out];
 }
 
 // A name from a reply -> the ".planning/..." path of an existing file it means, or null. Bare names must match one file.
-let docIndex = null, docIndexAt = 0;
-async function docTarget($, ref) {
+let docIndex: Map<string, string[]> | null = null, docIndexAt = 0;
+async function docTarget($: EngineInterface, ref: string): Promise<string | null> {
   const t = ref.replace(/\\/g, "/");
-  const isFile = async (rel) => (await $.fs.stat(at(rel)).catch(() => null))?.kind === "file";
+  const isFile = async (rel: string): Promise<boolean> => (await $.fs.stat(at(rel)).catch(() => null))?.kind === "file";
   const i = t.lastIndexOf(".planning/");
   const tries = i >= 0 ? [t.slice(i)] : /^([a-z]:)?\/|^~/i.test(t) ? [] : t.includes("/") ? [`.planning/${t}`, ...(wsBase ? [`${wsBase}/${t}`] : [])] : null;
   if (tries) { for (const rel of tries) if (!rel.includes("..") && (await isFile(rel))) return rel; return null; }
@@ -383,30 +386,30 @@ async function docTarget($, ref) {
   if (!docIndex || now - docIndexAt > 60000) { // ponytail: one walk of .planning a minute, 5 deep and 4000 files at most
     docIndex = new Map(); docIndexAt = now;
     let n = 0;
-    const walk = async (dir, depth) => {
+    const walk = async (dir: string, depth: number): Promise<void> => {
       for (const e of await $.fs.list(at(dir)).catch(() => [])) {
         if (e.name.startsWith(".") || ++n > 4000) continue;
         const rel = `${dir}/${e.name}`;
         if (e.kind === "dir" && depth < 5) await walk(rel, depth + 1);
-        else if (/\.md$/i.test(e.name)) docIndex.set(e.name, [...(docIndex.get(e.name) ?? []), rel]);
+        else if (/\.md$/i.test(e.name)) docIndex!.set(e.name, [...(docIndex!.get(e.name) ?? []), rel]); // set just above
       }
     };
     await walk(".planning", 1);
   }
   const hits = docIndex.get(t) ?? [];
-  return hits.length === 1 ? hits[0] : null;
+  return hits.length === 1 ? hits[0]! : null;
 }
 
 // A click on the "open in the GSD reader" line under a tool row in the transcript: show the pane and open that file.
-async function fromTranscript($, href) {
+async function fromTranscript($: EngineInterface, href: string): Promise<void> {
   const rel = planRel(decodeURIComponent(String(href).replace(/^file:\/\//, "")));
   if (!rel) return;
   await openPane($).catch(() => {});
   await openReader($, rel);
 }
 
-async function readerPress($, key) {
-  const [, kind, arg] = /^reader:([^:]+):?(.*)$/s.exec(key) ?? [];
+async function readerPress($: EngineInterface, key: string): Promise<void> {
+  const [, kind, arg = ""] = /^reader:([^:]+):?(.*)$/s.exec(key) ?? [];
   if (kind === "browse") return openReader($, ".planning");
   if (kind === "open-path") return openReader($, arg);
   if (!reader) return;
@@ -421,13 +424,13 @@ async function readerPress($, key) {
   }
 }
 
-async function openPane($) {
+async function openPane($: EngineInterface) {
   const r = await $.ui.open({ id: PANE, title: "GSD", ...PANE_SIZE });
   panePlaced = r.isPlaced;
   return r;
 }
 
-export function register(on, options) {
+export function register(on: On, options: PluginOptions): void {
   openOnStart = options?.openOnStart !== false;
   toasts = options?.toasts !== false;
   on("session.start", async ($, e, next) => {
@@ -457,7 +460,7 @@ export function register(on, options) {
   // The pane is driven by the session's own events.
   on("turn.start", async ($, e, next) => {
     const out = await next(e);
-    if (isGsd && !e.agentId) {
+    if (isGsd && !(e as { agentId?: string }).agentId) { // not in the declared event: kept as it was
       const now = await $.clock.now();
       live.isRunning = true;
       live.turn = { startedAt: now, edits: 0, errors: 0 };
@@ -479,7 +482,7 @@ export function register(on, options) {
         if (isEdit) live.turn.edits += 1;
         if (failed) live.turn.errors += 1;
       }
-      if (isEdit) note("write", shortPath(e.file_path ?? e.input?.file_path ?? e.notebook_path ?? ""), now);
+      if (isEdit) note("write", shortPath(e.file_path ?? (e.input as { file_path?: unknown } | undefined)?.file_path ?? e.notebook_path ?? ""), now);
       else if (failed) note("error", String(e.tool), now);
       void soon($);
     }
@@ -527,25 +530,26 @@ export function register(on, options) {
     const { Box, Text, Button, Markdown } = $.ui.resolve(e);
     if (!isGsd) return Text({ dimColor: true, children: "No GSD project here." });
     const W = Math.max(40, e.props.bodyColumns);
-    const segs = (list) => list.map(([text, color, flags]) => Text({ ...(color ? { color } : {}), ...(flags === "b" ? { bold: true } : {}), children: text }));
-    const press = (key) => () => {
+    const segs = (list: Segment[]) => list.map(([text, color, flags]) => Text({ ...(color ? { color } : {}), ...(flags === "b" ? { bold: true } : {}), children: text }));
+    const press = (key: string) => () => {
       if (key.startsWith("reader:")) return void readerPress($, key);
       flip(key);
       if (key === "ws") void refresh($); else $.ui.invalidate("ui.render");
     };
-    const link = (k) => void linkPress($, k.href);
+    const link = (k: PressedLink) => void linkPress($, k.href);
     // A line is plain text, a row with a ▸/▾ button in front, or one whole-line button.
-    const line = (l, i) => {
-      if (l.md !== undefined) return Markdown({ key: l.key ?? `md${i}`, text: l.md, onLinkPress: link });
+    const line = (l: Line, i: number) => {
+      if (!Array.isArray(l) && l.md !== undefined) return Markdown({ key: l.key ?? `md${i}`, text: l.md, onLinkPress: link });
       if (Array.isArray(l)) return Text({ wrap: "truncate", children: segs(l) });
       if (l.toggle) {
         return Box({ flexDirection: "row", children: [
           Button({ key: l.toggle.key, label: l.toggle.open ? "▾" : "▸", plain: true, ...(l.toggle.hotkey ? { hotkey: l.toggle.hotkey } : {}), onPress: press(l.toggle.key) }),
           Text({ children: " " }),
-          Text({ wrap: "truncate", children: segs(l.segs) }),
+          Text({ wrap: "truncate", children: segs(l.segs ?? []) }),
         ] });
       }
-      return Button({ key: l.button.key, label: l.button.label, plain: true, hotkey: l.button.hotkey, onPress: press(l.button.key) });
+      const b = l.button!; // what is left: a whole-line button
+      return Button({ key: b.key, label: b.label, plain: true, hotkey: b.hotkey, onPress: press(b.key) });
     };
     const m = panelModel({ ...live, history: hist, reader, expand, now: await $.clock.now() }, W);
     return Box({
@@ -567,7 +571,7 @@ export function register(on, options) {
   // Clicks reach a mod only in the fullscreen terminal, so elsewhere the row stays as the engine draws it.
   on("ui.render", { component: "ToolUse" }, async ($, e, next) => {
     const p = e.props ?? {};
-    const file = p.input?.file_path;
+    const file = (p.input as { file_path?: unknown } | undefined)?.file_path;
     if (!isGsd || e.surface !== "terminal" || !e.viewport?.isFullscreen || !["Read", "Write", "Edit"].includes(p.tool) || typeof file !== "string" || !/\.md$/i.test(file) || p.isRunning || p.isErrored) return next(e);
     if (!planRel(file)) return next(e);
     const { Box, Markdown } = $.ui.resolve(e);
@@ -581,11 +585,11 @@ export function register(on, options) {
   // A reply that names .planning documents: the engine's own drawing, and a line under it whose links open them in the reader.
   on("ui.render", { component: "AssistantMessage" }, async ($, e, next) => {
     if (!isGsd || e.surface !== "terminal" || !e.viewport?.isFullscreen) return next(e);
-    const rels = [];
+    const rels: string[] = [];
     for (const ref of docRefs(e.props?.text).slice(0, 12)) { const r = await docTarget($, ref); if (r && !rels.includes(r)) rels.push(r); }
     if (!rels.length) return next(e);
     const { Box, Markdown } = $.ui.resolve(e);
-    const href = (rel) => "file://" + encodeURI(at(rel).replace(/\\/g, "/")).replace(/[#?()]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+    const href = (rel: string) => "file://" + encodeURI(at(rel).replace(/\\/g, "/")).replace(/[#?()]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
     const hrefs = rels.map(href);
     const text = `⎿  open in the GSD reader: ${rels.map((r, k) => `[${r.split("/").pop()}](${hrefs[k]})`).join(" · ")}`;
     return Box({ flexDirection: "column", children: [

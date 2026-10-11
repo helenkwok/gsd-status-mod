@@ -55,3 +55,10 @@ export type PanelInput = {
   isRunning?: boolean; turn?: Turn | null; receipt?: Receipt | null; agents?: Agent[]; streams?: Stream[]; handoff?: Handoff | null;
   log?: LogRow[]; workstream?: Workstream | null; expand?: Partial<Expand>; now?: number;
 };
+
+// What gsd-status.ts keeps for the pane: this session's events plus what the last refresh read.
+export type Live = {
+  state: string | null; roadmap: string | null; plans: Plan[]; workstream: Workstream | null; handoff: Handoff | null; usage: Usage | null;
+  agents: Agent[]; streams: Stream[]; log: LogRow[]; isRunning: boolean; turn: Turn | null; receipt: Receipt | null;
+  commits: number; newest: string | null; startCommits: number; startCost: number | null;
+};

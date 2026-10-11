@@ -1,0 +1,5 @@
+{
+  "overrides": [
+    { "files": ["tests/**"], "rules": { "typescript/no-floating-promises": "off" } }
+  ]
+}

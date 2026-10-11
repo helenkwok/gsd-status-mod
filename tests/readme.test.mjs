@@ -20,17 +20,20 @@ test("README: every command and option, with its default", () => {
 });
 
 test("README: every $ call the code makes is in the reach section", () => {
-  const reach = readme.slice(readme.indexOf("## What it can touch"));
+  const at = readme.indexOf("What it can touch (reach)\n");
+  assert.ok(at > 0, "reach section");
+  const reach = readme.slice(at);
   for (const c of new Set([...code.matchAll(/\$\.(\w+\.\w+)\(/g)].map((m) => m[1]))) assert.ok(reach.includes(`$.${c}`), c);
 });
 
 test("README: images exist and every screenshot is used", () => {
-  const used = [...readme.matchAll(/\]\((docs\/screenshots\/[^)]+)\)/g)].map((m) => m[1]);
+  const used = [...readme.matchAll(/(?:\]\(|src=")(docs\/screenshots\/[^)"]+)/g)].map((m) => m[1]);
   for (const p of used) assert.ok(existsSync(new URL(`../${p}`, import.meta.url)), p);
   for (const f of readdirSync(new URL("../docs/screenshots", import.meta.url))) assert.ok(used.includes(`docs/screenshots/${f}`), f);
 });
 
 test("versions and names agree: plugin, marketplace, changelog, install commands", () => {
+  assert.ok(readme.includes(`badge/version-${plugin.version}-`), "version badge");
   assert.equal(read("CHANGELOG.md").match(/^## (\d+\.\d+\.\d+) \(\d{4}-\d\d-\d\d\)$/m)?.[1], plugin.version);
   const m = market.plugins.find((x) => x.name === plugin.name);
   assert.ok(m, "plugin listed in the marketplace");

@@ -539,7 +539,7 @@ export function register(on: On, options: PluginOptions): void {
     const link = (k: PressedLink) => void linkPress($, k.href);
     // A line is plain text, a row with a ▸/▾ button in front, or one whole-line button.
     const line = (l: Line, i: number) => {
-      if (!Array.isArray(l) && l.md !== undefined) return Markdown({ key: l.key ?? `md${i}`, text: l.md, onLinkPress: link });
+      if (l.md !== undefined) return Markdown({ key: l.key ?? `md${i}`, text: l.md, onLinkPress: link });
       if (Array.isArray(l)) return Text({ wrap: "truncate", children: segs(l) });
       if (l.toggle) {
         return Box({ flexDirection: "row", children: [

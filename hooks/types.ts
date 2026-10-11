@@ -27,12 +27,13 @@ export type Stage = "planning" | "executing" | "checking" | "other";
 // A work stream's directory listing, each entry tagged with the folder it came from when there are two.
 export type Entry = FsEntry & { from?: string };
 export type StreamInfo = { count: number; newest: string; recent: string[]; paths?: string[] };
-export type Stream = StreamInfo & { name: string };
+export type Stream = { name: string; count: number; newest: string; recent?: string[]; paths?: string[] };
 
 export type Workstream = { name: string; index: number; total: number; names: string[] };
 
 // The markdown reader: a folder listing or one file.
-export type Reader = { path: string; isFile: boolean; entries?: FsEntry[]; text?: string };
+export type DirEntry = Pick<FsEntry, "name" | "kind" | "isLink">;
+export type Reader = { path: string; isFile: boolean; entries?: DirEntry[]; text?: string };
 
 // Which of the pane's parts the person has opened.
 export type Expand = { agents: Set<string>; finished: boolean; blockers: boolean; log: boolean; roadmap: boolean; pace: boolean; trends: boolean; timeline: boolean; toc: boolean; streams?: Set<string> };
@@ -46,12 +47,14 @@ export type Segment = [text: string, color: string | null, flags?: string];
 export type Button = { key: string; label: string; color: string | null; hotkey?: string };
 export type Toggle = { key: string; open?: boolean; hotkey?: string };
 export type Control = { segs?: Segment[]; toggle?: Toggle; button?: Button; md?: string; key?: string };
-export type Line = Segment[] | Control;
+// A plain line is segments. It has none of a control's keys, so `l.button?.key` reads on any line.
+export type Plain = Segment[] & { [K in keyof Control]?: undefined };
+export type Line = Plain | Control;
 export type Panel = { id: string; color: string; title: Segment[]; right: Segment[] | null; lines: Line[] };
 export type Model = { header: Segment[]; panels: Panel[] };
 
 export type PanelInput = {
-  history?: Run[]; plans?: Plan[]; reader?: Reader | null; roadmap?: string | null; state?: string | null; usage?: Usage | null;
+  history?: Run[]; plans?: Plan[]; reader?: Reader | null; roadmap?: string | null; state?: string | null; usage?: Partial<Usage> | null;
   isRunning?: boolean; turn?: Turn | null; receipt?: Receipt | null; agents?: Agent[]; streams?: Stream[]; handoff?: Handoff | null;
   log?: LogRow[]; workstream?: Workstream | null; expand?: Partial<Expand>; now?: number;
 };

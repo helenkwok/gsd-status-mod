@@ -1,9 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { segsOf, visibleAgents, agentTree, panelModel, streamInfo, commitFeed, commitCount, shortPath, gauge, kTokens, fmtUsd, limitLabel, sections } from "../hooks/panel.ts";
+import type { Agent, DirEntry, Entry, Line, Model, Plain, Run, Segment } from "../hooks/types.ts";
 
-const text = (line) => segsOf(line).map((s) => s[0]).join("");
-const dump = (m) => [m.header.map((s) => s[0]).join(""), ...m.panels.flatMap((p) => [`[${p.id}] ${p.title.map((s) => s[0]).join("")} | ${p.right ? p.right.map((s) => s[0]).join("") : ""}`, ...p.lines.map(text)])].join("\n");
+const text = (line: Line): string => segsOf(line).map((s) => s[0]).join("");
+const dump = (m: Model): string => [m.header.map((s) => s[0]).join(""), ...m.panels.flatMap((p) => [`[${p.id}] ${p.title.map((s) => s[0]).join("")} | ${p.right ? p.right.map((s) => s[0]).join("") : ""}`, ...p.lines.map(text)])].join("\n");
 const STATE = "---\ngsd_state_version: 1.0\nstatus: paused\ncurrent_phase: 22\ncurrent_phase_name: Rebuild mobile rendering\nlast_activity_desc: x\n---";
 const NOW = Date.parse("2026-10-03T12:00:00Z");
 
@@ -30,8 +31,8 @@ test("commitFeed and commitCount read the reflog", () => {
 });
 
 test("streamInfo: counts folders, ignores index files, newest by name with numbers in order", () => {
-  const d = (name) => ({ name, kind: "dir", size: 0, mtimeMs: 0, isLink: false });
-  const f = (name, mtimeMs = 0) => ({ name, kind: "file", size: 1, mtimeMs, isLink: false });
+  const d = (name: string): Entry => ({ name, kind: "dir", size: 0, mtimeMs: 0, isLink: false });
+  const f = (name: string, mtimeMs = 0): Entry => ({ name, kind: "file", size: 1, mtimeMs, isLink: false });
   assert.deepEqual(streamInfo([d("99-a"), d("247-ifcx"), d("100-b"), f("MANIFEST.md"), f("CONVENTIONS.md")]), { count: 3, newest: "247-ifcx", recent: ["247-ifcx", "100-b", "99-a"] });
   assert.deepEqual(streamInfo([f("a.md", 10), f("b.md", 30), f("c.md", 20), f(".keep")]), { count: 3, newest: "b", recent: ["b", "c", "a"] });
   assert.equal(streamInfo([]), null);
@@ -94,7 +95,7 @@ test("panelModel: the main box says agents are working while one runs between tu
 });
 
 test("agentTree: children follow their parent, deeper; orphans and cycles still show", () => {
-  const a = (id, parentId, status = "running", since = 0) => ({ id, parentId, status, since, type: "t", description: id });
+  const a = (id: string, parentId: string | undefined, status = "running", since = 0): Agent => ({ id, parentId, status, since, type: "t", description: id });
   const tree = agentTree([a("c2", "p", "running", 3), a("p", undefined, "running", 1), a("g", "c1", "running", 4), a("c1", "p", "running", 2), a("o", "gone", "completed", 9), a("x", "y"), a("y", "x")]);
   assert.deepEqual(tree.map((n) => [n.id, n.depth]), [["p", 0], ["c1", 1], ["g", 2], ["c2", 1], ["o", 0], ["x", 0], ["y", 1]].filter(Boolean));
   assert.equal(agentTree(null).length, 0);
@@ -117,7 +118,7 @@ test("panelModel: forks and sub-agents are indented and marked, with depth in th
 });
 
 test("visibleAgents: a wave collapses finished agents but keeps running ones and their parents", () => {
-  const a = (id, status, endedAt, parentId) => ({ id, parentId, status, since: 0, endedAt, type: "gsd-executor", description: id });
+  const a = (id: string, status: string, endedAt: number | null, parentId?: string): Agent => ({ id, parentId, status, since: 0, endedAt, type: "gsd-executor", description: id });
   const tree = agentTree([a("root", "running", null), ...Array.from({ length: 5 }, (_, i) => a(`d${i}`, "completed", 100 + i, "root")), a("live", "running", null, "root"), a("bad", "failed", 50, "root")]);
   const { shown, hidden } = visibleAgents(tree);
   const ids = shown.map((n) => n.id);
@@ -136,25 +137,25 @@ test("visibleAgents: when nothing runs, finished agents fill the budget; a huge 
 });
 
 test("panelModel: the agents box says what it collapsed", () => {
-  const mk = (id, status, endedAt) => ({ id, status, since: NOW - 90000, endedAt, type: "gsd-executor", description: id });
+  const mk = (id: string, status: string, endedAt?: number): Agent => ({ id, status, since: NOW - 90000, endedAt, type: "gsd-executor", description: id });
   const t = dump(panelModel({ state: STATE, isRunning: false, now: NOW, agents: [mk("live", "running"), ...Array.from({ length: 5 }, (_, i) => mk(`d${i}`, "completed", NOW - i * 1000))] }));
   assert.ok(t.includes("▸ 3 more finished"), t);
   assert.ok(t.includes("agents · 1 running"), t);
 });
 
 test("clickable lines: agent rows and streams toggle, blockers and finished are buttons", () => {
-  const mk = (id, status, endedAt) => ({ id, status, since: NOW - 90000, endedAt, type: "gsd-executor", description: "Execute plan 02 of phase 22 and then some more words to make this one long enough to wrap", parentId: id === "kid" ? "live" : undefined });
+  const mk = (id: string, status: string, endedAt?: number): Agent => ({ id, status, since: NOW - 90000, endedAt, type: "gsd-executor", description: "Execute plan 02 of phase 22 and then some more words to make this one long enough to wrap", parentId: id === "kid" ? "live" : undefined });
   const base = { state: STATE, isRunning: false, now: NOW, handoff: { blockers: ["Stripe key missing"], human_actions_pending: ["Approve schema"] },
     agents: [mk("live", "running"), mk("kid", "running"), ...Array.from({ length: 4 }, (_, i) => mk(`d${i}`, "completed", NOW - i * 1000))],
     streams: [{ name: "spikes", count: 3, newest: "c", recent: ["c", "b", "a"] }], log: Array.from({ length: 12 }, (_, i) => ({ at: NOW + i, kind: "write", text: `f${i}` })) };
-  const lines = (m, id) => m.panels.find((p) => p.id === id).lines;
+  const lines = (m: Model, id: string): Line[] => m.panels.find((p) => p.id === id)!.lines;
   const closed = panelModel(base);
   const rows = lines(closed, "agents");
-  assert.deepEqual(rows.filter((l) => l.toggle).map((l) => [l.toggle.key, l.toggle.open, l.toggle.hotkey]).slice(0, 2), [["agent:live", false, "1"], ["agent:kid", false, "2"]]);
+  assert.deepEqual(rows.filter((l) => l.toggle).map((l) => [l.toggle!.key, l.toggle!.open, l.toggle!.hotkey]).slice(0, 2), [["agent:live", false, "1"], ["agent:kid", false, "2"]]);
   assert.ok(rows.some((l) => l.button?.key === "finished" && l.button.label.startsWith("▸")));
   assert.ok(lines(closed, "main").some((l) => l.button?.key === "blockers" && l.button.hotkey === "b"));
-  assert.ok(lines(closed, "log")[0].button?.key === "log");
-  assert.ok(lines(closed, "streams")[0].toggle.key === "stream:spikes");
+  assert.ok(lines(closed, "log")[0]!.button?.key === "log");
+  assert.ok(lines(closed, "streams")[0]!.toggle!.key === "stream:spikes");
 
   const open = panelModel({ ...base, expand: { agents: new Set(["kid"]), finished: true, blockers: true, streams: new Set(["spikes"]), log: true } });
   const t = dump(open);
@@ -166,23 +167,23 @@ test("clickable lines: agent rows and streams toggle, blockers and finished are 
 });
 
 test("nothing is out of reach: agents, log, descriptions, contents and streams all show in full when opened", () => {
-  const lines = (m, id) => m.panels.find((p) => p.id === id).lines;
+  const lines = (m: Model, id: string): Line[] => m.panels.find((p) => p.id === id)!.lines;
   const live = Array.from({ length: 20 }, (_, i) => ({ id: `r${i}`, status: "running", since: NOW - 1000, type: "t", description: "x" }));
   const many = { state: STATE, isRunning: true, now: NOW, agents: live, log: Array.from({ length: 40 }, (_, i) => ({ at: NOW + i, kind: "write", text: `f${i}` })) };
-  assert.equal(lines(panelModel(many), "agents").at(-1).button?.key, "finished"); // 8 running past the cap: a button, not plain text
+  assert.equal(lines(panelModel(many), "agents").at(-1)!.button?.key, "finished"); // 8 running past the cap: a button, not plain text
   assert.equal(lines(panelModel({ ...many, expand: { finished: true } }), "agents").filter((l) => l.toggle).length, 20);
-  assert.equal(lines(panelModel(many), "log")[0].button.label, "▸ 32 earlier");
+  assert.equal(lines(panelModel(many), "log")[0]!.button!.label, "▸ 32 earlier");
   assert.equal(lines(panelModel({ ...many, expand: { log: true } }), "log").length, 41); // all 40 kept entries and the button
   const desc = "word ".repeat(80).trim(); // 399 characters
   const a = panelModel({ ...many, agents: [{ id: "a", status: "running", since: NOW - 1000, type: "t", description: desc }], expand: { agents: new Set(["a"]) } }, 62);
-  assert.equal(lines(a, "agents").filter((l) => Array.isArray(l) && l[0][0] === "    " && !String(l[1][0]).startsWith("id ")).map((l) => l[1][0]).join(""), desc);
+  assert.equal(lines(a, "agents").filter((l): l is Plain => Array.isArray(l) && l[0]![0] === "    " && !String(l[1]![0]).startsWith("id ")).map((l) => l[1]![0]).join(""), desc);
   const heads = Array.from({ length: 40 }, (_, i) => `## h${i}\nx`).join("\n");
-  const toc = panelModel({ state: STATE, reader: { path: ".planning/big.md", isFile: true, text: heads }, expand: { toc: true }, now: 0 }, 70).panels[0].lines;
+  const toc = panelModel({ state: STATE, reader: { path: ".planning/big.md", isFile: true, text: heads }, expand: { toc: true }, now: 0 }, 70).panels[0]!.lines;
   assert.equal(toc.filter((l) => l.button?.key?.startsWith("reader:goto")).length, 40);
-  assert.equal(toc.find((l) => l.button?.key === "reader:toc").button.label, "▾ contents (40)");
+  assert.equal(toc.find((l) => l.button?.key === "reader:toc")!.button!.label, "▾ contents (40)");
   const st = { name: "threads", count: 50, newest: "t49", recent: ["t49", "t48", "t47", "t46", "t45"], paths: ["t49", "t48", "t47", "t46", "t45"].map((n) => `.planning/threads/${n}.md`) };
   const open = lines(panelModel({ state: STATE, streams: [st], expand: { streams: new Set(["threads"]) }, now: NOW }), "streams");
-  assert.deepEqual(open.at(-1).button && [open.at(-1).button.key, open.at(-1).button.label.trim()], ["reader:open-path:.planning/threads", "▸ all 50 in the reader"]);
+  assert.deepEqual(open.at(-1)!.button && [open.at(-1)!.button!.key, open.at(-1)!.button!.label.trim()], ["reader:open-path:.planning/threads", "▸ all 50 in the reader"]);
   assert.equal(lines(panelModel({ state: STATE, streams: [{ ...st, count: 5 }], expand: { streams: new Set(["threads"]) }, now: NOW }), "streams").some((l) => l.button?.label?.includes("all")), false);
 });
 
@@ -192,14 +193,14 @@ test("roadmap: reads the phase checklist and marks the current phase by its labe
   assert.equal(roadmapPhases(road).length, 3);
   const state = "---\nstatus: planning\ncurrent_phase_name: P1.5 — b (vector)\ncompleted_plans: 2\ntotal_plans: 5\n---\n";
   const m = panelModel({ roadmap: road, state, now: 0 }, 62);
-  const p = m.panels.find((x) => x.id === "roadmap");
+  const p = m.panels.find((x) => x.id === "roadmap")!;
   const text = p.lines.map((l) => (Array.isArray(l) ? l.map((s) => s[0]).join("") : "")).join("\n");
   assert.match(text, /▶ 2\.1/);
   assert.ok(p.lines.some((l) => l.button?.label === "▸ 1 before · 1 later" || l.button?.label === "▸ 1 before"));
-  assert.match(p.right[0][0], /1\/3 phases · 2\/5 plans/);
+  assert.match(p.right![0]![0], /1\/3 phases · 2\/5 plans/);
   // no match, no marker
-  const none = panelModel({ roadmap: road, state: "---\nstatus: x\n---\n", now: 0 }, 62).panels.find((x) => x.id === "roadmap");
-  assert.ok(!none.lines.some((l) => Array.isArray(l) && l[0][0].startsWith("▶")));
+  const none = panelModel({ roadmap: road, state: "---\nstatus: x\n---\n", now: 0 }, 62).panels.find((x) => x.id === "roadmap")!;
+  assert.ok(!none.lines.some((l) => Array.isArray(l) && l[0]![0].startsWith("▶")));
 });
 
 test("workstream: named in the header, with a switch button only when there are several", async () => {
@@ -207,9 +208,9 @@ test("workstream: named in the header, with a switch button only when there are 
   const state = "---\nstatus: executing\ncurrent_phase: 3\n---\n";
   const two = panelModel({ state, workstream: { name: "emsd", index: 1, total: 2, names: ["emsd", "nrb2"] }, now: 0 }, 62);
   assert.match(two.header.map((s) => s[0]).join(""), /GSD · emsd · phase 3/);
-  assert.ok(two.panels[0].lines.some((l) => l.button?.key === "ws" && /1 of 2/.test(l.button.label)));
+  assert.ok(two.panels[0]!.lines.some((l) => l.button?.key === "ws" && /1 of 2/.test(l.button.label)));
   const one = panelModel({ state, workstream: { name: "emsd", index: 1, total: 1, names: ["emsd"] }, now: 0 }, 62);
-  assert.ok(!one.panels[0].lines.some((l) => l.button?.key === "ws"));
+  assert.ok(!one.panels[0]!.lines.some((l) => l.button?.key === "ws"));
 });
 
 test("reader: pages cut at a line and not inside a fence; frontmatter hidden; browser lists folders first", async () => {
@@ -221,24 +222,24 @@ test("reader: pages cut at a line and not inside a fence; frontmatter hidden; br
   assert.ok(p.length > 3 && p.every((x) => x.length <= 560));
   assert.equal(p.join("\n"), body);
   const fenced = "```\n" + Array.from({ length: 40 }, () => "y".repeat(40)).join("\n") + "\n```\nafter";
-  assert.ok(pages(fenced, 500)[0].endsWith("```")); // a fence is kept whole, the cut comes after it
+  assert.ok(pages(fenced, 500)[0]!.endsWith("```")); // a fence is kept whole, the cut comes after it
   assert.deepEqual(pages(""), [""]);
-  const e = (name, kind) => ({ name, kind });
+  const e = (name: string, kind: DirEntry["kind"]): DirEntry => ({ name, kind, isLink: false });
   assert.deepEqual(browseList([e("10-x", "dir"), e("NOTES.md", "file"), e("2-y", "dir"), e("a.json", "file"), e(".hid", "dir")]).map((x) => x.name), ["2-y", "10-x", "NOTES.md"]);
   const dir = panelModel({ reader: { path: ".planning/phases", isFile: false, entries: [e("04-billing", "dir")] } }, 62);
   assert.equal(dir.panels.length, 1);
-  assert.ok(dir.panels[0].lines.some((l) => l.button?.key === "reader:open:04-billing"));
-  const keys = (m) => m.panels[0].lines.filter((l) => l.button).map((l) => l.button.key);
+  assert.ok(dir.panels[0]!.lines.some((l) => l.button?.key === "reader:open:04-billing"));
+  const keys = (m: Model): string[] => m.panels[0]!.lines.filter((l) => l.button).map((l) => l.button!.key);
   assert.ok(!keys(panelModel({ reader: { path: ".planning", isFile: false, entries: [] } }, 62)).includes("reader:close")); // at the top, back already leaves
   assert.ok(keys(dir).includes("reader:close") && keys(dir).includes("reader:up")); // deeper, one button leaves at once
-  const many = panelModel({ reader: { path: ".planning/threads", isFile: false, entries: Array.from({ length: 50 }, (_, i) => e(`t${i}.md`, "file")) } }, 62).panels[0].lines;
+  const many = panelModel({ reader: { path: ".planning/threads", isFile: false, entries: Array.from({ length: 50 }, (_, i) => e(`t${i}.md`, "file")) } }, 62).panels[0]!.lines;
   assert.equal(many.filter((l) => l.button?.key?.startsWith("reader:open:")).length, 50); // every entry can be opened, none hidden behind "+N more"
-  assert.equal(many.at(-1).button?.key, "reader:top");
+  assert.equal(many.at(-1)!.button?.key, "reader:top");
   const file = panelModel({ reader: { path: ".planning/ROADMAP.md", isFile: true, text: "---\na: b\n---\n# Hi\n- [x] done\n- [ ] todo" } }, 62);
-  assert.ok(file.panels[0].lines.some((l) => l.md === "# Hi\n- ✓ done\n- ○ todo"));
-  assert.equal(file.panels[0].lines.at(-1).button?.key, "reader:top"); // the last row of a file is the way back to its top
+  assert.ok(file.panels[0]!.lines.some((l) => l.md === "# Hi\n- ✓ done\n- ○ todo"));
+  assert.equal(file.panels[0]!.lines.at(-1)!.button?.key, "reader:top"); // the last row of a file is the way back to its top
   const huge = panelModel({ reader: { path: ".planning/x.md", isFile: true, text: "z".repeat(30000) } }, 62);
-  assert.ok(huge.panels[0].lines.filter((l) => l.md !== undefined).every((l) => l.md.length <= 9900));
+  assert.ok(huge.panels[0]!.lines.filter((l) => l.md !== undefined).every((l) => l.md!.length <= 9900));
   const { resolveLink } = await import("../hooks/gsd-status.ts");
   const { docRefs } = await import("../hooks/gsd-status.ts");
   assert.deepEqual(docRefs("`.planning/threads/x.md`, phases/04-b/04-01-PLAN.md:12, F:\\w\\.planning\\STATE.md, https://e.com/a.md and x.md twice: x.md"),
@@ -258,15 +259,15 @@ test("pace: plan shape, agent time shares, parallelism, and a hint only on clear
   assert.equal(planShape([{ id: "a", wave: 1, done: false }, { id: "b", wave: 1, done: false }]).widest, 2);
   assert.equal(planShape([]).widest, 0);
   const T = 1000, B = 1e6; // B: a real start time is never 0
-  const serial = [{ type: "gsd-executor", since: B, endedAt: B + 60 * T }, { type: "gsd-executor", since: B + 60 * T, endedAt: B + 120 * T }, { type: "gsd-planner", since: B + 120 * T, endedAt: B + 150 * T }];
+  const serial: Agent[] = [{ id: "e1", status: "completed", type: "gsd-executor", since: B, endedAt: B + 60 * T }, { id: "e2", status: "completed", type: "gsd-executor", since: B + 60 * T, endedAt: B + 120 * T }, { id: "p1", status: "completed", type: "gsd-planner", since: B + 120 * T, endedAt: B + 150 * T }];
   const p = agentPace(serial, B + 200 * T);
-  assert.equal(p.byType[0][0], "executor");
+  assert.equal(p.byType[0]![0], "executor");
   assert.equal(p.executors, 2);
-  assert.ok(Math.abs(p.executorParallel - 1) < 1e-9);
+  assert.ok(Math.abs(p.executorParallel! - 1) < 1e-9);
   const para = agentPace([{ type: "gsd-executor", since: B, endedAt: B + 60 * T }, { type: "gsd-executor", since: B, endedAt: B + 60 * T }], B + 100 * T);
-  assert.ok(Math.abs(para.executorParallel - 2) < 1e-9);
+  assert.ok(Math.abs(para.executorParallel! - 2) < 1e-9);
   const state = "---\ncurrent_phase: 4\n---\n";
-  const lines = (m) => m.panels.find((x) => x.id === "pace").lines.map((l) => (Array.isArray(l) ? l.map((s) => s[0]).join("") : l.button.label));
+  const lines = (m: Model): string[] => m.panels.find((x) => x.id === "pace")!.lines.map((l) => (Array.isArray(l) ? l.map((s) => s[0]).join("") : l.button!.label));
   const a = lines(panelModel({ state, plans: chain, agents: serial, now: B + 200 * T }, 62));
   assert.ok(a.some((l) => /serial: each plan waits/.test(l)) && a.some((l) => /serial: executors ran one at a time/.test(l)));
   const wide = lines(panelModel({ state, plans: [{ id: "a", wave: 1, done: false }, { id: "b", wave: 1, done: false }], agents: [], now: 0 }, 62));
@@ -277,39 +278,39 @@ test("pace: plan shape, agent time shares, parallelism, and a hint only on clear
 test("history: typical beside a running clock (amber when slow), trends button, trends view, this phase's stages", async () => {
   const { panelModel } = await import("../hooks/panel.ts");
   const MIN = 60000, B = 1e9;
-  const hist = [10, 20, 30, 40, 50].map((m, i) => [B + i, "gsd-executor", "4", m * MIN, 50, 1, 1, "m"]);
+  const hist = [10, 20, 30, 40, 50].map((m, i): Run => [B + i, "gsd-executor", "4", m * MIN, 50, 1, 1, "m"]);
   const state = "---\ncurrent_phase: 4\n---\n";
-  const agentRow = (m) => m.panels.find((x) => x.id === "agents").lines.find((l) => l.segs).segs;
-  const txt = (segs) => segs.map((s) => s[0]).join("");
+  const agentRow = (m: Model): Segment[] => m.panels.find((x) => x.id === "agents")!.lines.find((l) => l.segs)!.segs!;
+  const txt = (segs: Segment[]): string => segs.map((s) => s[0]).join("");
   const slow = panelModel({ state, history: hist, agents: [{ id: "a", type: "gsd-executor", description: "Execute plan 01", status: "running", since: B }], now: B + 70 * MIN }, 70);
   assert.match(txt(agentRow(slow)), /70:00 · typ 30:00/);
-  assert.equal(agentRow(slow).at(-1)[1], "warning"); // over twice the typical
+  assert.equal(agentRow(slow).at(-1)![1], "warning"); // over twice the typical
   const ok = panelModel({ state, history: hist, agents: [{ id: "a", type: "gsd-executor", description: "x", status: "running", since: B }], now: B + 40 * MIN }, 70);
-  assert.equal(agentRow(ok).at(-1)[1], "inactive");
+  assert.equal(agentRow(ok).at(-1)![1], "inactive");
   const few = panelModel({ state, history: hist.slice(0, 4), agents: [{ id: "a", type: "gsd-executor", description: "x", status: "running", since: B }], now: B + 5 * MIN }, 70);
   assert.ok(!/typ/.test(txt(agentRow(few)))); // fewer than five runs: nothing is called typical
-  const lines = slow.panels.find((x) => x.id === "pace").lines;
+  const lines = slow.panels.find((x) => x.id === "pace")!.lines;
   assert.ok(lines.some((l) => l.button?.key === "trends"));
   const tr = panelModel({ state, history: hist, expand: { trends: true }, now: B + 60 * MIN }, 70);
   assert.equal(tr.panels.length, 1);
-  assert.equal(tr.panels[0].id, "trends");
-  const flat = tr.panels[0].lines.map((l) => (Array.isArray(l) ? l.map((s) => s[0]).join("") : l.button.label)).join("\n");
+  assert.equal(tr.panels[0]!.id, "trends");
+  const flat = tr.panels[0]!.lines.map((l) => (Array.isArray(l) ? l.map((s) => s[0]).join("") : l.button!.label)).join("\n");
   assert.match(flat, /executor time per run/);
   assert.match(flat, /time by phase and stage/);
   assert.match(flat, /agent time per day/);
   assert.match(flat, /median 30m/);
-  const open = panelModel({ state, history: hist, plans: [{ id: "a", wave: 1, done: false }], expand: { pace: true }, now: B }, 70).panels.find((x) => x.id === "pace").lines;
-  assert.ok(open.some((l) => Array.isArray(l) && /this phase/.test(l[0][0]) && /executing 2h30/.test(l[1][0])));
+  const open = panelModel({ state, history: hist, plans: [{ id: "a", wave: 1, done: false }], expand: { pace: true }, now: B }, 70).panels.find((x) => x.id === "pace")!.lines;
+  assert.ok(open.some((l) => Array.isArray(l) && /this phase/.test(l[0]![0]) && /executing 2h30/.test(l[1]![0])));
 });
 
 test("pace shows the fit of the rest of the phase, and a wave that runs together", () => {
   const MIN = 60000, B = 10 * 3600000;
   const state = "---\ngsd_state_version: 1\ncurrent_phase: 2\n---\n";
-  const hist = Array.from({ length: 6 }, (_, i) => [B + i * MIN, "gsd-executor", "2", 10 * MIN, 10, 1, 1, "m", 3, 1]);
+  const hist = Array.from({ length: 6 }, (_, i): Run => [B + i * MIN, "gsd-executor", "2", 10 * MIN, 10, 1, 1, "m", 3, 1]);
   const plans = [{ id: "a", wave: 1, done: false }, { id: "b", wave: 1, done: false }, { id: "c", wave: 2, done: false }];
   const usage = { limits: [{ kind: "five_hour", pct: 90, resetsAt: new Date(B + 30 * MIN).toISOString() }] };
   const m = panelModel({ state, history: hist, plans, usage, agents: [], now: B }, 70);
-  const text = m.panels.find((x) => x.id === "pace").lines.map((l) => (Array.isArray(l) ? l.map((s) => s[0]).join("") : l.button.label)).join("\n");
+  const text = m.panels.find((x) => x.id === "pace")!.lines.map((l) => (Array.isArray(l) ? l.map((s) => s[0]).join("") : l.button!.label)).join("\n");
   assert.match(text, /≈ 20m of executing · 2 waves · from 6 runs/);
   assert.match(text, /5h\s+90% · resets in 30m/);
   assert.match(text, /quota \+9% \(9–9\) → 99%/);
@@ -320,29 +321,29 @@ test("pace shows the fit of the rest of the phase, and a wave that runs together
 test("timeline: one bar per agent over the latest stretch; overlapped executors read as parallel, serial ones as a staircase", () => {
   const MIN = 60000, B = 10 * 3600000;
   const state = "---\ngsd_state_version: 1\n---\n";
-  const ex = (end, ms) => [end, "gsd-executor", "1", ms, 5, 1, 1, "m"];
+  const ex = (end: number, ms: number): Run => [end, "gsd-executor", "1", ms, 5, 1, 1, "m"];
   const serial = panelModel({ state, history: [ex(B + 10 * MIN, 10 * MIN), ex(B + 20 * MIN, 10 * MIN)], expand: { timeline: true }, now: B + 20 * MIN }, 70);
-  const rows = serial.panels[0].lines.filter((l) => Array.isArray(l) && l[0][0].startsWith("executor"));
+  const rows = serial.panels[0]!.lines.filter((l): l is Plain => Array.isArray(l) && l[0]![0].startsWith("executor"));
   assert.equal(rows.length, 2);
-  assert.ok(rows[1][1][0].length > rows[0][1][0].length); // the second bar starts later
-  assert.match(serial.panels[0].lines.map((l) => (Array.isArray(l) ? l.map((s) => s[0]).join("") : l.button.label)).join("\n"), /executors ×1\.0 one at a time/);
+  assert.ok(rows[1]![1]![0].length > rows[0]![1]![0].length); // the second bar starts later
+  assert.match(serial.panels[0]!.lines.map((l) => (Array.isArray(l) ? l.map((s) => s[0]).join("") : l.button!.label)).join("\n"), /executors ×1\.0 one at a time/);
   const par = panelModel({ state, history: [ex(B + 10 * MIN, 10 * MIN), ex(B + 10 * MIN, 10 * MIN)], expand: { timeline: true }, now: B + 10 * MIN }, 70);
-  assert.match(par.panels[0].lines.map((l) => (Array.isArray(l) ? l.map((s) => s[0]).join("") : l.button.label)).join("\n"), /executors ×2\.0 overlapped/);
-  assert.match(panelModel({ state, history: [], expand: { timeline: true }, now: B }, 70).panels[0].lines.map((l) => (Array.isArray(l) ? l[0][0] : l.button.label)).join(" "), /no agents recorded yet/);
+  assert.match(par.panels[0]!.lines.map((l) => (Array.isArray(l) ? l.map((s) => s[0]).join("") : l.button!.label)).join("\n"), /executors ×2\.0 overlapped/);
+  assert.match(panelModel({ state, history: [], expand: { timeline: true }, now: B }, 70).panels[0]!.lines.map((l) => (Array.isArray(l) ? l[0]![0] : l.button!.label)).join(" "), /no agents recorded yet/);
 });
 
 test("reader: sections split at headings outside code fences; contents list jumps to them by key", () => {
   const text = "intro\n\n# One\ntext\n```\n# not a heading\n```\n## Two\nmore\n### Three\nx\n";
   const s = sections(text);
   assert.deepEqual(s.map((x) => x.heading?.title), [undefined, "One", "Two", "Three"]);
-  assert.ok(s[1].md.includes("# not a heading")); // stays inside its section
+  assert.ok(s[1]!.md.includes("# not a heading")); // stays inside its section
   const rd = { path: ".planning/a.md", isFile: true, text };
-  const closed = panelModel({ state: "---\ngsd_state_version: 1\n---\n", reader: rd, now: 0 }, 70).panels[0].lines;
+  const closed = panelModel({ state: "---\ngsd_state_version: 1\n---\n", reader: rd, now: 0 }, 70).panels[0]!.lines;
   assert.equal(closed.filter((l) => l.md !== undefined).map((l) => l.key).join(), "sec0,sec1,sec2,sec3");
-  assert.equal(closed.find((l) => l.button?.key === "reader:toc").button.label, "▸ contents (3)");
+  assert.equal(closed.find((l) => l.button?.key === "reader:toc")!.button!.label, "▸ contents (3)");
   assert.equal(closed.some((l) => l.button?.key?.startsWith("reader:goto")), false);
-  const open = panelModel({ state: "---\ngsd_state_version: 1\n---\n", reader: rd, expand: { toc: true }, now: 0 }, 70).panels[0].lines;
-  assert.deepEqual(open.filter((l) => l.button?.key?.startsWith("reader:goto")).map((l) => l.button.key), ["reader:goto:1", "reader:goto:2", "reader:goto:3"]);
-  const few = panelModel({ state: "---\ngsd_state_version: 1\n---\n", reader: { path: ".planning/b.md", isFile: true, text: "# a\nx\n## b\ny" }, now: 0 }, 70).panels[0].lines;
+  const open = panelModel({ state: "---\ngsd_state_version: 1\n---\n", reader: rd, expand: { toc: true }, now: 0 }, 70).panels[0]!.lines;
+  assert.deepEqual(open.filter((l) => l.button?.key?.startsWith("reader:goto")).map((l) => l.button!.key), ["reader:goto:1", "reader:goto:2", "reader:goto:3"]);
+  const few = panelModel({ state: "---\ngsd_state_version: 1\n---\n", reader: { path: ".planning/b.md", isFile: true, text: "# a\nx\n## b\ny" }, now: 0 }, 70).panels[0]!.lines;
   assert.equal(few.some((l) => l.button?.key === "reader:toc"), false); // fewer than three headings: no contents
 });

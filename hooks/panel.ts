@@ -2,8 +2,7 @@
 // A segment is [text, color, flags]: color is a Claude Code theme token or null, flags "b" for bold, "d" for dim.
 import { typical, phaseTotals, dailyBuckets, spark, dur, stageOf, forecast, burst } from "./history.ts";
 import { frontmatter, summarize, items } from "./state-line.ts";
-import type { FsEntry } from "claude-code";
-import type { Agent, Entry, Expand, Frontmatter, Line, Model, PanelInput, Plan, PlanShape, Reader, Segment, Stage, StreamInfo, TreeAgent } from "./types.ts";
+import type { Agent, DirEntry, Entry, Expand, Frontmatter, Line, Model, PanelInput, Plan, PlanShape, Reader, Segment, Stage, StreamInfo, TreeAgent } from "./types.ts";
 
 // Theme tokens, so the pane follows the person's theme (light, dark, colour-blind) the way the engine's own UI does.
 export const C = { main: "claude", agent: "suggestion", ok: "success", arch: "merged", amber: "warning", warn: "error", dim: "inactive", faint: "subtle" };
@@ -218,8 +217,8 @@ export function sections(text: string | null | undefined, max = 8000): Section[]
 const tick = (t: string): string => t.replace(/^(\s*[-*] )\[( |x|X)\] /gm, (_: string, lead: string, c: string) => `${lead}${c === " " ? "○" : "✓"} `);
 
 // One folder of .planning for the browser: sub-folders first, then the .md files, numbers in order (phase 2 before 10).
-export function browseList(entries: FsEntry[] | null | undefined): { name: string; dir: boolean }[] {
-  const isDir = (e: FsEntry): boolean => e.kind === "dir" || (e.isLink && e.kind !== "file");
+export function browseList(entries: DirEntry[] | null | undefined): { name: string; dir: boolean }[] {
+  const isDir = (e: DirEntry): boolean => e.kind === "dir" || (e.isLink && e.kind !== "file");
   return (entries ?? [])
     .filter((e) => !e.name.startsWith(".") && (isDir(e) || /\.md$/i.test(e.name)))
     .map((e) => ({ name: e.name, dir: isDir(e) }))

@@ -66,7 +66,7 @@ export function shortPath(p: unknown): string {
 export const segsOf = (line: Line): Segment[] => (Array.isArray(line) ? line : line.segs ?? [[line.button?.label ?? "", line.button?.color ?? null]]);
 
 const hms = (ms: number): string => new Date(ms).toTimeString().slice(0, 8);
-const shortType = (t: unknown): string => String(t ?? "agent").replace(/^gsd-/, "");
+const shortType = (t: string | undefined): string => String(t ?? "agent").replace(/^gsd-/, "");
 
 // The log's rows: time, a short kind word, the text.
 const KIND: Record<string, [string, string]> = { prompt: ["you", C.dim], spawn: ["spawn", C.agent], done: ["done", C.ok], fail: ["failed", C.warn], commit: ["commit", C.arch], write: ["wrote", C.main], error: ["error", C.warn], turn: ["turn", C.dim] };
@@ -119,7 +119,7 @@ export function visibleAgents(tree: TreeAgent[], { budget = 8, keep = 2, cap = 1
 // The phase checklist of a ROADMAP.md: "- [x] **Phase 2.1: name** - blurb". Only that one line shape is read, so a
 // hand-edited roadmap yields fewer rows rather than wrong ones. -> [{ id, name, done }]
 export type RoadmapPhase = { id: string; name: string; done: boolean };
-export function roadmapPhases(text: unknown): RoadmapPhase[] {
+export function roadmapPhases(text: string | null | undefined): RoadmapPhase[] {
   const out: RoadmapPhase[] = [];
   for (const m of String(text ?? "").matchAll(/^\s*[-*]\s*\[( |x|X)\]\s*\*\*Phase\s+([\w.]+?):?\s+(.+?)\*\*/gm)) out.push({ id: m[2] ?? "", name: (m[3] ?? "").trim(), done: m[1] !== " " });
   return out;
@@ -177,11 +177,11 @@ export function agentPace(agents: Pick<Agent, "type" | "since" | "endedAt">[] | 
 // --- the markdown reader's pure parts
 
 // The YAML block at the top of a GSD file: the dashboard already shows STATE's fields, so the reader hides it.
-export const stripFrontmatter = (t: unknown): string => String(t ?? "").replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "");
+export const stripFrontmatter = (t: string | null | undefined): string => String(t ?? "").replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "");
 
 // Pages of at most `max` characters (the Markdown element draws at most 10000), cut at a line, never inside a code fence.
 // ponytail: a single fenced block over 9500 characters is cut mid-fence, so show it raw if that ever matters.
-export function pages(text: unknown, max = 8000): string[] {
+export function pages(text: string | null | undefined, max = 8000): string[] {
   const out: string[] = [];
   let cur = "", fence = false;
   for (const line of String(text ?? "").replace(/\r\n/g, "\n").split("\n")) {
@@ -196,7 +196,7 @@ export function pages(text: unknown, max = 8000): string[] {
 // The file as blocks that each begin at a heading (#, ## or ###), one Markdown element apiece, so the contents list can
 // scroll to a heading by its element's key. -> [{ md, heading?: { level, title } }]
 export type Section = { md: string; heading?: { level: number; title: string } };
-export function sections(text: unknown, max = 8000): Section[] {
+export function sections(text: string | null | undefined, max = 8000): Section[] {
   const out: Section[] = [];
   let cur: string[] = [], fence = false, head: Section["heading"] | null = null;
   const flush = () => {

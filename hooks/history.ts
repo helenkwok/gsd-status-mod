@@ -6,7 +6,7 @@ import type { Agent, Limit, PlanShape, Run, Stage } from "./types.ts";
 
 export const KEEP = 300; // runs kept per project, the oldest dropped first
 
-const bare = (t: unknown): string => String(t ?? "").replace(/^gsd-/, "");
+const bare = (t: string | undefined): string => String(t ?? "").replace(/^gsd-/, "");
 const STAGES = {
   planning: /^(planner|phase-researcher|project-researcher|pattern-mapper|roadmapper)$/,
   executing: /^(executor|code-fixer)$/,

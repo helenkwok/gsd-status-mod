@@ -63,7 +63,7 @@ export function resumeLine(text: string, max = 70): string | null {
 // The command a next_action names, if it names one: the first /gsd-<name>, plus at most one argument that looks like
 // a phase number or version (2, 4.5, v1). Free-text arguments are dropped, so the result is something that can be
 // offered as a suggestion without guessing. null when the text names no command (prose such as "Nothing is pending").
-export function nextCommand(nextAction: unknown): string | null {
+export function nextCommand(nextAction: string | null | undefined): string | null {
   const m = /(?<![\w/.~-])(\/gsd-[a-z][a-z0-9-]*)(?:\s+(v?\d+(?:\.\d+)*[a-z]?)(?![\w-]))?/.exec(String(nextAction ?? ""));
   return m ? m[1] + (m[2] ? " " + m[2] : "") : null;
 }

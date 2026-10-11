@@ -11,7 +11,7 @@
     {
       "name": "gsd-status-mod",
       "source": "./",
-      "description": "Resume hints for GSD projects: where work stopped, a STATE.md drift warning, the handoff's next action, and a Tab suggestion."
+      "description": "A Claude Code mod for GSD projects: a live pane (roadmap, agent tree with forks, cost and context, work streams, session log, pace and fit forecast, timeline, trends, a markdown reader) plus a status band, a next-action hint and /gsd-status, read from .planning/."
     }
   ]
 }

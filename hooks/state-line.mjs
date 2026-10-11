@@ -122,12 +122,10 @@ export function items(v) {
     .filter(Boolean);
 }
 
-function listBlock(label, v, show = 5) {
+function listBlock(label, v) {
   const all = items(v);
   if (!all.length) return [];
-  const out = [`${label} (${all.length})`, ...all.slice(0, show).map((s) => "  - " + s)];
-  if (all.length > show) out.push(`  … and ${all.length - show} more`);
-  return out;
+  return [`${label} (${all.length})`, ...all.map((s) => "  - " + s)];
 }
 
 // The full resume report for the /gsd-status command: everything the band and hint compress, in plain lines.

@@ -162,7 +162,7 @@ test("statusReport: full report with handoff lists", () => {
   for (const want of [
     "Now: phase 4 · Billing (executing)", "Progress: 3/7 phases · 11/20 plans", "Stopped at: Finished plan 02 of phase 4",
     "⚠ ~9 commits since STATE.md", "(written 2d ago)", "Command: /gsd-verify-work 4",
-    "Blockers (2)", "  - CI red on main", "Needs a person (1)", "Remaining tasks (7)", "… and 2 more", "Uncommitted at pause: 1 file",
+    "Blockers (2)", "  - CI red on main", "Needs a person (1)", "Remaining tasks (7)", "  - g", "Uncommitted at pause: 1 file",
   ]) assert.ok(r.text.includes(want), want + "\n" + r.text);
 });
 

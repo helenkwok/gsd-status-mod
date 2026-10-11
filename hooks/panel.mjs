@@ -230,7 +230,7 @@ function readerModel(rd, header, inner, ex = {}) {
   if (rd.isFile) {
     // The engine refuses the WHOLE pane if one Markdown block passes 10000 characters, so a block is cut at 9900 as a last resort.
     const secs = sections(tick(stripFrontmatter(rd.text)));
-    const heads = secs.map((x, i) => ({ i, ...x.heading })).filter((x) => x.title).slice(0, 30);
+    const heads = secs.map((x, i) => ({ i, ...x.heading })).filter((x) => x.title);
     if (heads.length >= 3) {
       lines.push({ button: { key: "reader:toc", label: `${ex.toc ? "▾" : "▸"} contents (${heads.length})`, color: C.dim, hotkey: "c" } });
       if (ex.toc) for (const x of heads) lines.push({ button: { key: `reader:goto:${x.i}`, label: cut(`${"  ".repeat(x.level - 1)}${x.title}`, inner - 2), color: x.level === 1 ? C.arch : null } });
@@ -240,8 +240,8 @@ function readerModel(rd, header, inner, ex = {}) {
   } else {
     const list = browseList(rd.entries);
     if (!list.length) lines.push([["no markdown here", C.dim]]);
-    for (const e of list.slice(0, 40)) lines.push({ button: { key: `reader:open:${e.name}`, label: `${e.dir ? "▸" : " "} ${e.name}${e.dir ? "/" : ""}`, color: e.dir ? C.arch : null } });
-    if (list.length > 40) lines.push([[`+${list.length - 40} more`, C.dim]]);
+    for (const e of list) lines.push({ button: { key: `reader:open:${e.name}`, label: `${e.dir ? "▸" : " "} ${e.name}${e.dir ? "/" : ""}`, color: e.dir ? C.arch : null } });
+    if (list.length > 30) lines.push({ button: { key: "reader:top", label: "↑ back to top", color: C.dim, hotkey: "t" } });
     right = [[`${list.length}`, C.dim]];
   }
   return { header, panels: [{ id: "reader", color: C.arch, title: [[cut(crumb, inner - 8), C.arch, "b"]], right, lines }] };
@@ -445,7 +445,7 @@ export function panelModel(inp, width = 62) {
     const running = tree.filter((a) => a.status === "running").length;
     const forks = tree.filter((a) => a.isFork).length;
     const base = visibleAgents(tree);
-    const { shown, hidden } = ex.finished ? visibleAgents(tree, { budget: 12, keep: 12 }) : base;
+    const { shown, hidden } = ex.finished ? visibleAgents(tree, { budget: Infinity, keep: Infinity, cap: Infinity }) : base;
     const lines = [];
     shown.forEach((a, i) => {
       const isRun = a.status === "running";
@@ -465,13 +465,13 @@ export function panelModel(inp, width = 62) {
       });
       if (open) {
         const full = String(a.description ?? "").replace(/\s+/g, " ").trim();
-        for (const part of [full.slice(0, inner - 4), full.slice(inner - 4, 2 * (inner - 4))].filter(Boolean)) lines.push([["    ", null], [part, null]]);
+        for (let k = 0; k < full.length; k += inner - 4) lines.push([["    ", null], [full.slice(k, k + inner - 4), null]]);
         const parent = a.parentId ? tree.find((x) => x.id === a.parentId) : null;
         lines.push([["    ", null], [`id ${String(a.id).slice(0, 8)} · ${a.type}${a.isFork ? " · fork" : ""}${a.parentId ? ` · under ${parent ? shortType(parent.type) : String(a.parentId).slice(0, 8)}` : ""} · ${a.status}`, C.dim]]);
       }
     });
     const hiddenLive = tree.filter((a) => a.status === "running" && !shown.includes(a)).length;
-    if (hiddenLive) lines.push([[`+${hiddenLive} running, ${hidden - hiddenLive} finished not shown`, C.agent]]);
+    if (hiddenLive) lines.push({ button: { key: "finished", label: `▸ +${hiddenLive} running, ${hidden - hiddenLive} finished not shown`, color: C.agent, hotkey: "f" } });
     else if (!ex.finished && hidden) lines.push({ button: { key: "finished", label: `▸ ${hidden} more finished`, color: C.ok, hotkey: "f" } });
     else if (ex.finished && base.hidden) lines.push({ button: { key: "finished", label: "▾ collapse finished", color: C.dim, hotkey: "f" } });
     const depth = Math.max(...tree.map((a) => a.depth));
@@ -497,19 +497,20 @@ export function panelModel(inp, width = 62) {
       const open = ex.streams?.has?.(st.name);
       lines.push({ toggle: { key: `stream:${st.name}`, open }, segs: [[st.name.padEnd(8), C.dim], [String(st.count).padStart(4) + "  ", null, "b"], [cut(st.newest, inner - 16), C.dim]] });
       if (open) (st.recent ?? [st.newest]).slice(0, 5).forEach((n, i) => lines.push(st.paths?.[i] ? { button: { key: `reader:open-path:${st.paths[i]}`, label: `    ${cut(n, inner - 8)}`, color: C.dim } } : [["      ", null], [cut(n, inner - 8), C.dim]]));
+      if (open && st.count > 5 && st.paths?.[0]) lines.push({ button: { key: `reader:open-path:${st.paths[0].split("/").slice(0, -1).join("/")}`, label: `    ▸ all ${st.count} in the reader`, color: C.arch } });
     }
     panels.push({ id: "streams", color: C.arch, title: [["work streams", C.arch, "b"]], right: null, lines });
   }
 
   // log: what happened, newest last; the button shows earlier entries
   const all = inp.log ?? [];
-  const log = ex.log ? all.slice(-24) : all.slice(-8);
+  const log = ex.log ? all : all.slice(-8);
   if (log.length) {
     const lines = log.map((l) => {
       const [word, color] = KIND[l.kind] ?? [l.kind, C.dim];
       return [[`${hms(l.at)} `, C.dim], [word.padEnd(7), color, "b"], [cut(l.text, inner - 17), null]];
     });
-    if (!ex.log && all.length > 8) lines.unshift({ button: { key: "log", label: `▸ ${Math.min(all.length, 24) - 8} earlier`, color: C.dim, hotkey: "l" } });
+    if (!ex.log && all.length > 8) lines.unshift({ button: { key: "log", label: `▸ ${all.length - 8} earlier`, color: C.dim, hotkey: "l" } });
     else if (ex.log && all.length > 8) lines.unshift({ button: { key: "log", label: "▾ show less", color: C.dim, hotkey: "l" } });
     panels.push({ id: "log", color: C.faint, title: [["session log", C.dim, "b"]], right: null, lines });
   }

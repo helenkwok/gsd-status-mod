@@ -66,18 +66,19 @@ It is a Claude Code **mod**. It adds a live pane and four smaller things, each s
     running ones shaded): agents that ran together sit on top of each other and agents that ran one after another form a
     staircase, with the executors' parallelism underneath.
   - *agents*: a tree of running and finished agents, with forks (`⑂`) and sub-agents under their parent, and a live
-    clock. Finished agents fold away while others run.
+    clock. Finished agents fold away while others run; `f` opens the whole tree, every agent and its full description.
   - *markdown reader*: `o: ▸ read .planning` (or any entry under *work streams*) swaps the dashboard for a browser of
     `.planning`, one folder at a time (so any depth), and then for the file itself, drawn by Claude Code's own `Markdown`
     element: the same typography as a reply, at the pane's width, scrolled with the wheel or `PageDown`/`End`. The YAML
     header is hidden, `- [x]` shows as `✓` and `- [ ]` as `○`, and a relative link to another `.md` file under `.planning`
     opens it. A path opens only if its real location, symlinks followed, is still under `.planning`'s own, so a symlink inside
-    `.planning` cannot lead the reader elsewhere. `b` goes back one level, and `d: ⌂ dashboard` returns to the dashboard from any depth, and `t: ↑ back to top` ends every file. Only `.planning` is readable.
-    A file with three or more headings gets `c: ▸ contents`: a list of its headings (up to 30, levels 1 to 3) that jumps
+    `.planning` cannot lead the reader elsewhere. `b` goes back one level, and `d: ⌂ dashboard` returns to the dashboard from any depth, and `t: ↑ back to top` ends every file and every folder of more than 30 entries. A folder lists all its entries. Only `.planning` is readable.
+    A file with three or more headings gets `c: ▸ contents`: a list of its headings (all of them, levels 1 to 3) that jumps
     to one. In a fullscreen terminal, a Read, Write or Edit of a `.planning` markdown file also gets a line under its tool
     row in the transcript, `open in the GSD reader`, that opens the pane on that file.
-  - *last turn / turn*, *work streams* (counts and newest of phases, spikes, threads, todos, seeds, notes) and a
-    *session log* of prompts, spawns, errors and new commits.
+  - *last turn / turn*, *work streams* (counts and newest of phases, spikes, threads, todos, seeds, notes; an open stream lists its five
+    newest, and `▸ all N in the reader` opens its folder) and a *session log* of prompts, spawns, errors and new commits
+    (the last 40, all shown when opened).
 
   Everything with a `▸` is clickable. With the pane focused (`ctrl+x`, then `Tab`) hotkeys work too: `1`-`6` agent rows,
   `b` blockers, `r` roadmap, `p` pace, `t` trends, `g` timeline, `w` workstream, `o` read `.planning`, `c` contents (in a file), `f` finished agents, `l` log. The pane is read-only. The cost is whatever Claude Code

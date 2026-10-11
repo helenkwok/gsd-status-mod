@@ -165,6 +165,27 @@ test("clickable lines: agent rows and streams toggle, blockers and finished are 
   assert.ok(lines(open, "agents").filter((l) => l.toggle).length > lines(closed, "agents").filter((l) => l.toggle).length);
 });
 
+test("nothing is out of reach: agents, log, descriptions, contents and streams all show in full when opened", () => {
+  const lines = (m, id) => m.panels.find((p) => p.id === id).lines;
+  const live = Array.from({ length: 20 }, (_, i) => ({ id: `r${i}`, status: "running", since: NOW - 1000, type: "t", description: "x" }));
+  const many = { state: STATE, isRunning: true, now: NOW, agents: live, log: Array.from({ length: 40 }, (_, i) => ({ at: NOW + i, kind: "write", text: `f${i}` })) };
+  assert.equal(lines(panelModel(many), "agents").at(-1).button?.key, "finished"); // 8 running past the cap: a button, not plain text
+  assert.equal(lines(panelModel({ ...many, expand: { finished: true } }), "agents").filter((l) => l.toggle).length, 20);
+  assert.equal(lines(panelModel(many), "log")[0].button.label, "▸ 32 earlier");
+  assert.equal(lines(panelModel({ ...many, expand: { log: true } }), "log").length, 41); // all 40 kept entries and the button
+  const desc = "word ".repeat(80).trim(); // 399 characters
+  const a = panelModel({ ...many, agents: [{ id: "a", status: "running", since: NOW - 1000, type: "t", description: desc }], expand: { agents: new Set(["a"]) } }, 62);
+  assert.equal(lines(a, "agents").filter((l) => Array.isArray(l) && l[0][0] === "    " && !String(l[1][0]).startsWith("id ")).map((l) => l[1][0]).join(""), desc);
+  const heads = Array.from({ length: 40 }, (_, i) => `## h${i}\nx`).join("\n");
+  const toc = panelModel({ state: STATE, reader: { path: ".planning/big.md", isFile: true, text: heads }, expand: { toc: true }, now: 0 }, 70).panels[0].lines;
+  assert.equal(toc.filter((l) => l.button?.key?.startsWith("reader:goto")).length, 40);
+  assert.equal(toc.find((l) => l.button?.key === "reader:toc").button.label, "▾ contents (40)");
+  const st = { name: "threads", count: 50, newest: "t49", recent: ["t49", "t48", "t47", "t46", "t45"], paths: ["t49", "t48", "t47", "t46", "t45"].map((n) => `.planning/threads/${n}.md`) };
+  const open = lines(panelModel({ state: STATE, streams: [st], expand: { streams: new Set(["threads"]) }, now: NOW }), "streams");
+  assert.deepEqual(open.at(-1).button && [open.at(-1).button.key, open.at(-1).button.label.trim()], ["reader:open-path:.planning/threads", "▸ all 50 in the reader"]);
+  assert.equal(lines(panelModel({ state: STATE, streams: [{ ...st, count: 5 }], expand: { streams: new Set(["threads"]) }, now: NOW }), "streams").some((l) => l.button?.label?.includes("all")), false);
+});
+
 test("roadmap: reads the phase checklist and marks the current phase by its label", async () => {
   const { roadmapPhases, panelModel } = await import("../hooks/panel.mjs");
   const road = "## Phases\n- [x] **Phase 1: P0 — a** - x\n- [ ] **Phase 2.1: P1.5 — b (INSERTED)** - y\n- [ ] **Phase 3: P2 — c** - z\nnot a phase\n";
@@ -210,6 +231,9 @@ test("reader: pages cut at a line and not inside a fence; frontmatter hidden; br
   const keys = (m) => m.panels[0].lines.filter((l) => l.button).map((l) => l.button.key);
   assert.ok(!keys(panelModel({ reader: { path: ".planning", isFile: false, entries: [] } }, 62)).includes("reader:close")); // at the top, back already leaves
   assert.ok(keys(dir).includes("reader:close") && keys(dir).includes("reader:up")); // deeper, one button leaves at once
+  const many = panelModel({ reader: { path: ".planning/threads", isFile: false, entries: Array.from({ length: 50 }, (_, i) => e(`t${i}.md`, "file")) } }, 62).panels[0].lines;
+  assert.equal(many.filter((l) => l.button?.key?.startsWith("reader:open:")).length, 50); // every entry can be opened, none hidden behind "+N more"
+  assert.equal(many.at(-1).button?.key, "reader:top");
   const file = panelModel({ reader: { path: ".planning/ROADMAP.md", isFile: true, text: "---\na: b\n---\n# Hi\n- [x] done\n- [ ] todo" } }, 62);
   assert.ok(file.panels[0].lines.some((l) => l.md === "# Hi\n- ✓ done\n- ○ todo"));
   assert.equal(file.panels[0].lines.at(-1).button?.key, "reader:top"); // the last row of a file is the way back to its top

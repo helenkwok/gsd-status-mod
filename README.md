@@ -17,7 +17,7 @@ person, work streams, and a built-in markdown reader for `.planning`.
 > **Read-only.** It reads `.planning/` and the git reflog, writes no files, runs no processes and makes no network calls.
 > It draws nothing outside a GSD project. No dependencies. Details: [What it can touch](#-what-it-can-touch-reach).
 
-<p align="center"><img src="docs/screenshots/demo.gif" alt="Demo: the pane shows 1 needs a person; the blockers open (Stripe webhook secret missing); the reader opens the phase plan, whose blocker line names it; back on the dashboard" width="100%"></p>
+<p align="center"><img src="docs/screenshots/demo-blocker.gif" alt="Demo: the pane shows 1 needs a person; the blockers open (Stripe webhook secret missing); the reader opens the phase plan, whose blocker line names it; back on the dashboard" width="100%"></p>
 
 <p align="center"><sub>From "1 needs a person" to the plan that names the blocker, and back. Pace, trends and the timeline are in the screenshots below.</sub></p>
 

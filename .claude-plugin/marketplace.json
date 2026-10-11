@@ -12,6 +12,14 @@
       "name": "gsd-status-mod",
       "source": "./",
       "description": "A Claude Code mod for GSD projects: a live pane (roadmap, agent tree with forks, cost and context, work streams, session log, pace and fit forecast, timeline, trends, a markdown reader) plus a status band, a next-action hint and /gsd-status, read from .planning/."
+    },
+    {
+      "name": "open-links",
+      "source": {
+        "source": "github",
+        "repo": "helenkwok/open-links"
+      },
+      "description": "A Claude Code mod: file paths in Claude's replies become links that open the file (or your editor at the line). macOS, Linux and Windows paths, relative ones resolved against the session folder."
     }
   ]
 }

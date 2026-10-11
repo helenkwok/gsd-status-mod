@@ -370,7 +370,7 @@ function planRel(file: string | null | undefined): string | null {
 // `04-01-PLAN.md`, an absolute path or a Windows one; a `:line` after it and web links are left out. -> [string]
 export function docRefs(text: string | null | undefined): string[] {
   const out = new Set<string>();
-  for (const m of String(text ?? "").matchAll(/(?:https?:\/\/\S*)|((?:[A-Za-z]:)?[\w.~\/\\-]*?[\w-]+\.md)(?![\w-])/gi)) if (m[1]) out.add(m[1]);
+  for (const m of String(text ?? "").matchAll(/(?:https?:\/\/\S*)|((?:[A-Za-z]:)?[\w.~/\\-]*?[\w-]+\.md)(?![\w-])/gi)) if (m[1]) out.add(m[1]);
   return [...out];
 }
 

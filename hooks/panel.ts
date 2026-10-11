@@ -327,7 +327,7 @@ function timelineModel(inp: PanelInput, header: Segment[], inner: number, now: n
 //   now: ms }
 // -> { header: segments, panels: [{ id, color, title: segments, right: segments|null, lines: [segments] }] }
 export function panelModel(inp: PanelInput, width = 62): Model {
-  const ex: Expand = { agents: new Set(), finished: false, blockers: false, log: false, roadmap: false, pace: false, trends: false, timeline: false, toc: false, ...(inp.expand ?? {}) };
+  const ex: Expand = { agents: new Set(), finished: false, blockers: false, log: false, roadmap: false, pace: false, trends: false, timeline: false, toc: false, ...inp.expand };
   const w = Math.max(36, width);
   const inner = w - 4; // the border and one column of padding on each side
   const fm = frontmatter(inp.state ?? "") ?? {};

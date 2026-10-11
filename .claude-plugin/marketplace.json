@@ -16,8 +16,8 @@
     {
       "name": "open-links",
       "source": {
-        "source": "github",
-        "repo": "helenkwok/open-links"
+        "source": "url",
+        "url": "https://github.com/helenkwok/open-links.git"
       },
       "description": "A Claude Code mod: file paths in Claude's replies become links that open the file (or your editor at the line). macOS, Linux and Windows paths, relative ones resolved against the session folder."
     }

@@ -20,6 +20,15 @@
         "url": "https://github.com/helenkwok/open-links.git"
       },
       "description": "A Claude Code mod: file paths in Claude's replies become links that open the file (or your editor at the line). macOS, Linux and Windows paths, relative ones resolved against the session folder."
+    },
+    {
+      "name": "rustgis-tui",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/helenkwok/rustgis-tui.git",
+        "path": "claude-mod"
+      },
+      "description": "A Claude Code mod: RustGIS in a pane, the terminal UI rustgis-tui with its layers, panels and real map picture, driven by you with keys and the mouse and by Claude with its screen and send tools, in the same running app. Needs rustgis-tui and rustgis-cli."
     }
   ]
 }

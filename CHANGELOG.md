@@ -5,7 +5,8 @@ One entry per release, newest first. Versions follow `.claude-plugin/plugin.json
 ## 0.8.2 (2026-10-18)
 
 - An idle session now re-reads all of `.planning` every 15 seconds, so the band and the pane follow work done by another
-  session or by hand without waiting for the next prompt ([#1](https://github.com/helenkwok/gsd-status-mod/issues/1)).
+  session or by hand without waiting for the next prompt ([#1](https://github.com/helenkwok/gsd-status-mod/issues/1)). Found and
+  diagnosed by [@avireddy0](https://github.com/avireddy0), who also showed why a file watch would miss changes.
 
 ## 0.8.1 (2026-10-11)
 

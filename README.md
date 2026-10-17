@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://github.com/helenkwok/gsd-status-mod/actions/workflows/test.yml"><img alt="tests" src="https://github.com/helenkwok/gsd-status-mod/actions/workflows/test.yml/badge.svg"></a>
-  <img alt="version 0.8.1" src="https://img.shields.io/badge/version-0.8.1-d97757">
+  <img alt="version 0.8.2" src="https://img.shields.io/badge/version-0.8.2-d97757">
   <img alt="Claude Code 2.1.287+" src="https://img.shields.io/badge/Claude%20Code-2.1.287%2B-d97757">
   <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-3fb950"></a>
 </p>

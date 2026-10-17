@@ -297,10 +297,16 @@ async function soon($: EngineInterface): Promise<void> {
 
 // Once a second while the pane is open and something is running: redraw so the clocks move, and every 5 seconds
 // re-read agents and commits, since an agent can end without a hook of ours firing.
+// While idle: a full re-read every 15 seconds, so work done by another session (or by hand) shows up without a prompt.
+// Not a file watch: seeds, workstream switches and files added inside a phase folder would slip past one (issue #1).
 async function tick($: EngineInterface): Promise<void> {
-  if (!isGsd || !panePlaced) return;
-  if (!live.isRunning && !live.agents.some((a) => a.status === "running")) return;
+  if (!isGsd) return;
   const now = await $.clock.now();
+  if (!live.isRunning && !live.agents.some((a) => a.status === "running")) {
+    if (now - lastRefreshAt >= 15000) await refresh($).catch(() => {});
+    return;
+  }
+  if (!panePlaced) return;
   if (now - lastRefreshAt >= 5000) await refresh($, false).catch(() => {});
   else $.ui.invalidate("ui.render");
 }

@@ -81,6 +81,19 @@ test("quota: a reviewer in the stretch, or a window reset, leaves it unmeasured"
   assert.equal(q.state.saved!.runs[0]![8], -1);
 });
 
+test("idle: .planning is re-read in full every 15 seconds, so another session's work shows up without a prompt", async () => {
+  const r = await rig({ usage: { context: {}, cost: { usd: 0 }, rateLimits: [] } });
+  await r.fire("session.start", { isInteractive: true });
+  const reads: string[] = [];
+  const read0 = r.$.fs.read;
+  r.$.fs.read = async (p: string) => { reads.push(p); return read0(p); };
+  const step = async (ms: number) => { r.state.now += ms; r.state.tick!(); await new Promise((res) => setImmediate(res)); };
+  await step(10000);
+  assert.equal(reads.length, 0); // not yet
+  await step(6000);
+  assert.ok(reads.includes("/p/.planning/ROADMAP.md"), "the full refresh reads the roadmap too");
+});
+
 test("a reply naming .planning documents gets a line of reader links under it; other replies are left alone", async () => {
   const r = await rig({ usage: { context: {}, cost: { usd: 0 }, rateLimits: [] } });
   await r.fire("session.start", { isInteractive: true });
